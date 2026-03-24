@@ -1,0 +1,2 @@
+# Backend PHP (HostGator); não são funções serverless no Vercel
+api/*.php

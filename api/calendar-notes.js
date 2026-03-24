@@ -1,4 +1,4 @@
-import { loadData, parseBody, saveData, sendJson } from './_store.js';
+import { loadData, parseBody, saveData, sendJson } from '../lib/store.js';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return sendJson(res, 200, { ok: true });
