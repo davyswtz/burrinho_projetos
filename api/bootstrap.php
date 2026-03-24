@@ -9,8 +9,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 try {
     $pdo = db();
     $tasks = $pdo->query('SELECT id, titulo, responsavel, prazo, status, prioridade FROM tasks ORDER BY id ASC')->fetchAll();
-    $opTasks = $pdo->query('SELECT id, taskCode, titulo, setor, responsavel, clientesAfetados, descricao, categoria, prazo, prioridade, status, is_parent_task, parent_task_id, criadaEm, historico FROM op_tasks ORDER BY id ASC')->fetchAll();
-    $calendarNotes = $pdo->query('SELECT id, date, title, description, priority, createdAt FROM calendar_notes ORDER BY id ASC')->fetchAll();
+    $opSql = 'SELECT id, taskCode, titulo, setor, regiao, responsavel, clientesAfetados,
+      coordenadas, localizacao_texto AS localizacaoTexto, descricao, categoria, prazo, prioridade, status,
+      is_parent_task, parent_task_id, criadaEm, historico
+      FROM op_tasks ORDER BY id ASC';
+    $opTasks = $pdo->query($opSql)->fetchAll();
+    $calendarNotes = $pdo->query(
+        'SELECT id, `date`, title, description, priority, createdAt FROM calendar_notes ORDER BY id ASC'
+    )->fetchAll();
     $cfgRows = $pdo->query('SELECT cfg_key, cfg_value FROM app_config')->fetchAll();
 
     $cfgMap = [];

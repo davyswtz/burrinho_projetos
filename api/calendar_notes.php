@@ -14,10 +14,10 @@ try {
         if ($id <= 0) {
             jsonResponse(['ok' => false, 'error' => 'id invalido'], 422);
         }
-        $sql = 'INSERT INTO calendar_notes (id, date, title, description, priority, createdAt)
-                VALUES (:id, :date, :title, :description, :priority, :createdAt)
+        $sql = 'INSERT INTO calendar_notes (id, `date`, title, description, priority, createdAt)
+                VALUES (:id, :note_date, :title, :description, :priority, :createdAt)
                 ON DUPLICATE KEY UPDATE
-                  date = VALUES(date),
+                  `date` = VALUES(`date`),
                   title = VALUES(title),
                   description = VALUES(description),
                   priority = VALUES(priority),
@@ -25,7 +25,7 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             ':id' => $id,
-            ':date' => (string) ($data['date'] ?? ''),
+            ':note_date' => (string) ($data['date'] ?? ''),
             ':title' => (string) ($data['title'] ?? ''),
             ':description' => (string) ($data['description'] ?? ''),
             ':priority' => (string) ($data['priority'] ?? 'Média'),

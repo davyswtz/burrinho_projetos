@@ -1,0 +1,10 @@
+# Bloqueia acesso HTTP direto ao arquivo de senhas (se estiver nesta pasta)
+<Files "credentials.php">
+  Require all denied
+</Files>
+
+# HostGator Apache 2.2 (fallback)
+<Files "credentials.php">
+  Order allow,deny
+  Deny from all
+</Files>

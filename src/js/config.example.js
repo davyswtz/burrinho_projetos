@@ -1,8 +1,9 @@
 window.APP_CONFIG = {
-  // Produção (Vercel, etc.): sem definir nada, usa automaticamente a mesma origem + "/api".
-  // Localhost/Live Server: API fica desligada por padrão (só localStorage).
-  // Para testar API no PC: apiBaseUrl: "http://127.0.0.1:8000/api" (PHP embutido na pasta certa).
-  // apiBaseUrl: "https://seu-dominio.com/api",
+  // HostGator: em geral NÃO precisa definir nada (mesmo site + pasta /api).
+  // Ver HOSTGATOR.md na raiz do projeto.
+  // Produção Vercel: mesma origem + "/api" se não definir apiBaseUrl.
+  // Localhost/Live Server: API desligada por padrão (só localStorage).
+  // apiBaseUrl: "https://outro-subdominio.com/api",
   apiBaseUrl: "",
 };
 

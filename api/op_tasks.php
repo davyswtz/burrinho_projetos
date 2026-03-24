@@ -37,14 +37,27 @@ try {
     }
 
     $pdo = db();
-    $sql = 'INSERT INTO op_tasks (id, taskCode, titulo, setor, responsavel, clientesAfetados, descricao, categoria, prazo, prioridade, status, is_parent_task, parent_task_id, criadaEm, historico)
-            VALUES (:id, :taskCode, :titulo, :setor, :responsavel, :clientesAfetados, :descricao, :categoria, :prazo, :prioridade, :status, :isParentTask, :parentTaskId, :criadaEm, :historico)
+    $coord = (string) ($data['coordenadas'] ?? '');
+    $locText = (string) ($data['localizacaoTexto'] ?? '');
+    $sql = 'INSERT INTO op_tasks (
+              id, taskCode, titulo, setor, regiao, responsavel, clientesAfetados,
+              coordenadas, localizacao_texto, descricao, categoria, prazo, prioridade, status,
+              is_parent_task, parent_task_id, criadaEm, historico
+            )
+            VALUES (
+              :id, :taskCode, :titulo, :setor, :regiao, :responsavel, :clientesAfetados,
+              :coordenadas, :localizacao_texto, :descricao, :categoria, :prazo, :prioridade, :status,
+              :is_parent_task, :parent_task_id, :criadaEm, :historico
+            )
             ON DUPLICATE KEY UPDATE
               taskCode = VALUES(taskCode),
               titulo = VALUES(titulo),
               setor = VALUES(setor),
+              regiao = VALUES(regiao),
               responsavel = VALUES(responsavel),
               clientesAfetados = VALUES(clientesAfetados),
+              coordenadas = VALUES(coordenadas),
+              localizacao_texto = VALUES(localizacao_texto),
               descricao = VALUES(descricao),
               categoria = VALUES(categoria),
               prazo = VALUES(prazo),
@@ -60,15 +73,18 @@ try {
         ':taskCode' => (string) ($data['taskCode'] ?? ''),
         ':titulo' => (string) ($data['titulo'] ?? ''),
         ':setor' => (string) ($data['setor'] ?? ''),
+        ':regiao' => (string) ($data['regiao'] ?? ''),
         ':responsavel' => (string) ($data['responsavel'] ?? ''),
         ':clientesAfetados' => (string) ($data['clientesAfetados'] ?? ''),
+        ':coordenadas' => $coord,
+        ':localizacao_texto' => $locText,
         ':descricao' => (string) ($data['descricao'] ?? ''),
         ':categoria' => (string) ($data['categoria'] ?? 'rompimentos'),
         ':prazo' => (string) ($data['prazo'] ?? ''),
         ':prioridade' => (string) ($data['prioridade'] ?? 'Média'),
         ':status' => (string) ($data['status'] ?? 'Criada'),
-        ':isParentTask' => !empty($data['isParentTask']) ? 1 : 0,
-        ':parentTaskId' => isset($data['parentTaskId']) && $data['parentTaskId'] !== '' ? (int) $data['parentTaskId'] : null,
+        ':is_parent_task' => !empty($data['isParentTask']) ? 1 : 0,
+        ':parent_task_id' => isset($data['parentTaskId']) && $data['parentTaskId'] !== '' ? (int) $data['parentTaskId'] : null,
         ':criadaEm' => (string) ($data['criadaEm'] ?? date('c')),
         ':historico' => json_encode($data['historico'] ?? [], JSON_UNESCAPED_UNICODE),
     ]);

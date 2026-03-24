@@ -1,0 +1,9 @@
+# Renomeie para .htaccess na raiz do site (public_html) se precisar.
+# DirectoryIndex garante abertura do index.html ao acessar a pasta.
+
+DirectoryIndex index.html index.php
+
+# Opcional: forçar HTTPS (descomente após SSL ativo no cPanel)
+# RewriteEngine On
+# RewriteCond %{HTTPS} !=on
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

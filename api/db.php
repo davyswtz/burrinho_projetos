@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Conexão MySQL — HostGator/cPanel ou variáveis de ambiente.
+ * Preferência: api/credentials.php (copie de credentials.example.php).
+ */
 function db(): PDO
 {
     static $pdo = null;
@@ -9,15 +13,35 @@ function db(): PDO
     }
 
     $host = getenv('DB_HOST') ?: 'localhost';
-    $name = getenv('DB_NAME') ?: 'planner_db';
-    $user = getenv('DB_USER') ?: 'root';
+    $name = getenv('DB_NAME') ?: '';
+    $user = getenv('DB_USER') ?: '';
     $pass = getenv('DB_PASS') ?: '';
     $port = getenv('DB_PORT') ?: '3306';
+
+    $credFile = __DIR__ . '/credentials.php';
+    if (is_readable($credFile)) {
+        $c = require $credFile;
+        if (is_array($c)) {
+            $host = (string) ($c['host'] ?? $host);
+            $name = (string) ($c['database'] ?? $c['name'] ?? $name);
+            $user = (string) ($c['user'] ?? $c['username'] ?? $user);
+            $pass = (string) ($c['password'] ?? $c['pass'] ?? $pass);
+            $port = (string) ($c['port'] ?? $port);
+        }
+    }
+
+    if ($name === '' || $user === '') {
+        throw new RuntimeException(
+            'Configure MySQL: crie api/credentials.php a partir de credentials.example.php ' .
+            'ou defina DB_NAME e DB_USER no servidor.'
+        );
+    }
 
     $dsn = "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4";
     $pdo = new PDO($dsn, $user, $pass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
     ]);
 
     return $pdo;
