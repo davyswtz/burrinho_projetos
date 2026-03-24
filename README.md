@@ -38,11 +38,11 @@ Criar uma solução interna capaz de:
 ## 🚀 Demonstração
 
 <p align="center">
-  <img src="./assets/home.png" alt="Tela principal" width="800">
+  <img src="https://image2url.com/r2/default/images/1774382327696-2392d1ac-b5c8-4ac7-8d53-375790f22c19.png" alt="image"  width="850px"/>
 </p>
 
 <p align="center">
-  <img src="./assets/dashboard.png" alt="Dashboard" width="45%">
+  <img src="https://image2url.com/r2/default/images/1774382420024-33dbd4ba-fc97-4afd-a3d2-5838da7c3fc6.png" alt="image"  width="45%"/>
   <img src="./assets/mobile.png" alt="Versão mobile" width="45%">
 </p>
 
