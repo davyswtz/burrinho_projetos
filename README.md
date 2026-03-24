@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-em%20uso-success">
+  <img src="https://chat.google.com/u/0/api/get_attachment_url?url_type=FIFE_URL&content_type=image%2Fpng&attachment_token=AOo0EEWKPv1dATaWGbYujntzEtbCSxQ62LCIeeepfikQ0fslNjBRf%2Flg4ydDlxlSIcdY%2F8tBPDHGPh%2F%2BNz0z1JoQJgkEkYA5zri%2FADn7%2FE6jxv4jmjQ0oeU0elQvBKgsV3KMPGF1sb7%2FouThWB6ZH4u1FsZpZLkdPXR4%2FnGt%2BoiL9sd9sgqOMXRvyT69IAOE4rtDvwDSCU0D0CwARceHqy9mMtAvH7cO5c0S9r9h4l3wFTbBYzAb%2FH4otSMn%2BBP%2FtsjdbxDRGZ7bto1hymSiwsDZFan6LBo%2FZo3AIi4Gvj5O3DAS0MxKid23lNk8FDclwnJTxnvEhGX4wl4%2Bx%2BughJfFIRGNI2uA11%2BlpHMn5CAsGywii98gTdd%2FiYJ3Ntdum%2FlIQftBlisbgCwPLTRaY0scq%2BWdUUG8fKB%2BC1makhsrj6j1bwEEdylFgSHiODjCES6vjD1dL1nEJkX9o%2FVpU4Godg%2BTWUfiDB%2FA2K%2FHIXzSICeVhROGnweX0hwjDMPAeu%2BBUfifhzpRbYPbzf5iktXpMZLYGOdbpAoe%2Bv7WofhNpyb3Qqi3PrxcIu%2B7N1LKGPDLVkGKxoqoiK3F411NUYcz&allow_caching=true&sz=w1920-h919-rw&auditContext=forDisplay">
   <img src="https://img.shields.io/badge/projeto-interno-blue">
   <img src="https://img.shields.io/badge/feito%20por-Davy%20Andrade-8A2BE2">
 </p>
