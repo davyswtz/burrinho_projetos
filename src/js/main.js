@@ -1826,11 +1826,78 @@ const Controllers = {
 
   /* ── Sidebar ──────────────────────────────────────────── */
   sidebar: {
+    MOBILE_MQ: typeof window !== 'undefined' ? window.matchMedia('(max-width: 960px)') : { matches: false, addEventListener: () => {} },
+
+    isMobileNav() {
+      return this.MOBILE_MQ.matches;
+    },
+
+    closeMobileNav() {
+      document.body.classList.remove('nav-open');
+      const btn = document.getElementById('mobileNavBtn');
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-label', 'Abrir menu');
+      }
+      const bd = document.getElementById('sidebarBackdrop');
+      if (bd) {
+        bd.hidden = true;
+        bd.setAttribute('aria-hidden', 'true');
+      }
+    },
+
+    openMobileNav() {
+      document.body.classList.add('nav-open');
+      const btn = document.getElementById('mobileNavBtn');
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'true');
+        btn.setAttribute('aria-label', 'Fechar menu');
+      }
+      const bd = document.getElementById('sidebarBackdrop');
+      if (bd) {
+        bd.hidden = false;
+        bd.setAttribute('aria-hidden', 'false');
+      }
+    },
+
+    toggleMobileNav() {
+      if (document.body.classList.contains('nav-open')) this.closeMobileNav();
+      else this.openMobileNav();
+    },
+
     init() {
-      document.getElementById('collapseBtn').addEventListener('click', () => {
-        const sidebar = document.getElementById('sidebar');
+      const sidebar = document.getElementById('sidebar');
+      const collapseBtn = document.getElementById('collapseBtn');
+
+      collapseBtn.addEventListener('click', () => {
+        if (this.isMobileNav()) {
+          this.closeMobileNav();
+          return;
+        }
         sidebar.classList.toggle('collapsed');
         Store.sidebarOpen = !sidebar.classList.contains('collapsed');
+      });
+
+      document.getElementById('mobileNavBtn')?.addEventListener('click', () => this.toggleMobileNav());
+      document.getElementById('sidebarBackdrop')?.addEventListener('click', () => this.closeMobileNav());
+
+      const onViewportNavMode = e => {
+        if (!e.matches) {
+          this.closeMobileNav();
+          if (!Store.sidebarOpen) sidebar.classList.add('collapsed');
+          else sidebar.classList.remove('collapsed');
+        }
+      };
+      if (typeof this.MOBILE_MQ.addEventListener === 'function') {
+        this.MOBILE_MQ.addEventListener('change', onViewportNavMode);
+      } else if (typeof this.MOBILE_MQ.addListener === 'function') {
+        this.MOBILE_MQ.addListener(onViewportNavMode);
+      }
+
+      document.querySelectorAll('.nav-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (this.isMobileNav()) this.closeMobileNav();
+        });
       });
 
       document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
@@ -2605,9 +2672,14 @@ const Controllers = {
           if (e.target === overlay) overlay.classList.remove('open');
         });
       });
-      // Fechar com ESC
+      // Fechar com ESC (menu mobile antes dos modais)
       document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') ModalService.closeAll();
+        if (e.key !== 'Escape') return;
+        if (document.body.classList.contains('nav-open')) {
+          Controllers.sidebar.closeMobileNav();
+          return;
+        }
+        ModalService.closeAll();
       });
     },
   },
