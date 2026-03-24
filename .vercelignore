@@ -1,2 +1,2 @@
-# Backend PHP (HostGator); não são funções serverless no Vercel
-api/*.php
+# PHP não roda no Vercel — mantenha no Git para HostGator; só não sobe no deploy
+**/*.php
