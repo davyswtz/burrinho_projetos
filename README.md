@@ -46,7 +46,6 @@ Criar uma solução interna capaz de:
   <img src="./assets/mobile.png" alt="Versão mobile" width="45%">
 </p>
 
-> Adicione aqui prints reais do sistema para valorizar ainda mais o projeto.
 
 ---
 
