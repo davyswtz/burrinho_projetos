@@ -13,6 +13,8 @@ Guia para publicar o painel com **PHP + MySQL** (cPanel), com dados compartilhad
 
 Se você já tinha uma versão antiga só com parte das colunas de `op_tasks`, rode também **`api/migrations/001_op_tasks_rompimento_fields.sql`** (se der erro de coluna duplicada, pode ignorar).
 
+**Login lento no painel?** Se a tabela `usuario` foi criada com PBKDF2 em **200 mil iterações**, o `login.php` fica pesado em hospedagem compartilhada. Rode **`api/migrations/002_usuario_pbkdf2_60k.sql`** no mesmo banco (atualiza hashes e `pass_iterations`; **mesmas senhas** dos usuários).
+
 ## 2. Credenciais da API
 
 1. Na pasta **`api/`**, copie o arquivo:
@@ -110,7 +112,7 @@ Não versionar **`config.js`** com URLs ou senhas reais em repositório público
 
 ## 8. Segurança (recomendado)
 
-- Login padrão no front é **demonstração** (`projetos` / `123`). Em produção, prefira **`authUsers`** em `config.js` (ainda é front-end; para dados sensíveis, evolua para auth no servidor).
+- Autenticação em produção deve usar **`api/login.php`** + tabela **`usuario`** (ou `authUsers` em `config.js` só sem API).
 - **Webhook Google Chat:** não commitar URL com `key`/token no repositório. Use o modal do app ou `defaultWebhookUrl` só em deploy fechado. Se uma URL já vazou no histórico do Git, **revogue/regenere o webhook** no Google Chat e use uma URL nova.
 - Force **HTTPS** no cPanel (**SSL/TLS**) e, se quiser, redirecionamento HTTP → HTTPS.
 

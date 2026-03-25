@@ -125,13 +125,11 @@ const Store = (() => {
       return this.requestAny(['/bootstrap', '/bootstrap.php']);
     },
     async login(username, password) {
-      return this.requestAny(
-        ['/login', '/login.php'],
-        {
-          method: 'POST',
-          body: JSON.stringify({ username, password }),
-        },
-      );
+      // Uma única rota: evita uma ida HTTP extra em hosts que não têm `/login`.
+      return this.request('/login.php', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      });
     },
     async saveTask(task) {
       return this.requestAny(['/tasks', '/tasks.php'], { method: 'POST', body: JSON.stringify(task) });
@@ -2152,7 +2150,14 @@ const Controllers = {
         e.preventDefault();
         if (this._submitting) return;
         this._submitting = true;
+        const submitBtn = document.getElementById('loginSubmitBtn');
+        const prevLabel = submitBtn ? submitBtn.textContent : '';
         try {
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.setAttribute('aria-busy', 'true');
+            submitBtn.textContent = 'Entrando…';
+          }
           const user = document.getElementById('loginUser')?.value.trim();
           const pass = document.getElementById('loginPass')?.value.trim();
 
@@ -2162,6 +2167,11 @@ const Controllers = {
           }
         } finally {
           this._submitting = false;
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.removeAttribute('aria-busy');
+            submitBtn.textContent = prevLabel || 'Entrar';
+          }
         }
       });
 
@@ -3083,8 +3093,8 @@ async function initApp() {
   CtoLocationRegistry.load().catch(() => {});
   Controllers.auth.init();
 
-  // Bootstrap remoto pode demorar e bloquear interações do login.
-  // Garantimos um "timeout" para manter a UI responsiva.
+  // Bootstrap remoto pode demorar; listeners precisam existir antes do await
+  // para quem logar rápido não ficar com UI “morta”.
   const bootstrapWithTimeout = async (timeoutMs) => {
     try {
       return await Promise.race([
@@ -3096,8 +3106,6 @@ async function initApp() {
     }
   };
 
-  await bootstrapWithTimeout(8000);
-  // Inicializa todos os controllers
   Controllers.sidebar.init();
   Controllers.task.init();
   Controllers.opTask.init();
@@ -3109,6 +3117,8 @@ async function initApp() {
   Controllers.notes.init();
   Controllers.globalModal.init();
 
+  await bootstrapWithTimeout(6000);
+
   // Renderização inicial
   UI.renderAgenda();
   UI.renderDashboard();
@@ -3119,7 +3129,7 @@ async function initApp() {
   UI.updateClock();
   setInterval(() => UI.updateClock(), 30000);
   setInterval(async () => {
-    const updated = await bootstrapWithTimeout(8000);
+    const updated = await bootstrapWithTimeout(6000);
     if (!updated) return;
     UI.renderDashboard();
     UI.renderOpPage();

@@ -30,7 +30,11 @@ try {
 
     $salt = hex2bin((string) $row['pass_salt']);
     $expected = hex2bin((string) $row['pass_hash']);
-    $iterations = (int) ($row['pass_iterations'] ?? 200000);
+    // Limite defensivo (evita corpos POST com iterations absurdas se o esquema for alterado).
+    $iterations = (int) ($row['pass_iterations'] ?? 60000);
+    if ($iterations < 10000 || $iterations > 600000) {
+        $iterations = 60000;
+    }
 
     if ($salt === false || $expected === false || $iterations <= 0) {
         jsonResponse(['ok' => false]);

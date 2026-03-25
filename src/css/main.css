@@ -171,6 +171,11 @@ body.auth-locked .login-screen { display: flex; }
   caret-color: var(--white);
 }
 .login-btn { justify-content: center; margin-top: 2px; }
+.login-btn:disabled {
+  opacity: 0.85;
+  cursor: wait;
+  transform: none;
+}
 .login-hint {
   color: var(--white4);
   font-size: 11px;
