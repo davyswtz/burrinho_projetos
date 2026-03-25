@@ -1216,18 +1216,51 @@ input[readonly] {
 input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button { margin: 0; }
 
-#opRompimentoCoordsRow .wh-input-row { align-items: stretch; }
-#opRompimentoCoordsRow .sm-btn {
-  min-width: 86px;
+/* Modal operacional — fluxo rompimento (CTO → localização → técnico → clientes → região) */
+.rompimento-location-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
   border-radius: var(--radius);
-  border: 1px solid var(--border2);
-  background: var(--black3);
-  color: var(--green);
+  border: 1px solid var(--border);
+  background: rgba(31, 38, 31, 0.45);
 }
-#opRompimentoCoordsRow .sm-btn:hover {
-  border-color: var(--green);
-  background: var(--green-muted);
+.op-setor-cto-input {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
+#opTaskModal.rompimento-mode #opMainRow {
+  grid-template-columns: 1fr;
+}
+#opTaskModal.rompimento-mode #opRompimentoExtraRow {
+  grid-template-columns: 1fr;
+}
+
+/* Modal tarefa operacional: altura limitada + rolagem (evita ocupar a tela inteira, mantém layout) */
+#opTaskModal.modal-overlay > .modal {
+  max-height: min(88vh, calc(100dvh - 40px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#opTaskModal.modal-overlay > .modal .modal-head {
+  flex-shrink: 0;
+}
+#opTaskModal.modal-overlay > .modal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+#opTaskModal.modal-overlay > .modal .modal-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: 14px 20px max(18px, env(safe-area-inset-bottom, 0px));
+}
+
 select option { background: var(--black4); }
 input[type=date]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(.4); cursor: pointer; }
 .modal-footer { display: flex; gap: 8px; justify-content: flex-end; padding: 0 20px 18px; }
@@ -1529,10 +1562,16 @@ input[type=date]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(
     flex-direction: column;
     overflow: hidden;
   }
+  /* Folha operacional não encosta no topo: altura máxima confortável + área rolável */
+  #opTaskModal.modal-overlay > .modal {
+    max-height: min(82dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 24px));
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
   .modal-body {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     flex: 1 1 auto;
+    min-height: 0;
   }
   .form-row { grid-template-columns: 1fr; }
   .modal-footer {

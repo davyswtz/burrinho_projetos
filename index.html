@@ -673,7 +673,23 @@
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" id="opTaskModalBody">
+      <div class="form-group" id="opRompimentoSetorGroup" style="display:none">
+        <label for="op-setor-cto">Nome da CTO ou setor</label>
+        <input type="text" id="op-setor-cto" class="op-setor-cto-input" placeholder="Digite CTO ou setor" autocomplete="off" spellcheck="false"/>
+        <div class="hint" id="op-setor-cto-hint" style="margin-top:6px"></div>
+      </div>
+      <div class="rompimento-location-block" id="opRompimentoCoordsRow" style="display:none">
+        <div class="form-group">
+          <label for="op-coords">Coordenadas</label>
+          <input type="text" id="op-coords" placeholder="Preenchidas pela CTO ou edite manualmente" autocomplete="off"/>
+        </div>
+        <div class="form-group">
+          <label for="op-address-readonly">Endereço (rua / bairro)</label>
+          <input type="text" id="op-address-readonly" readonly placeholder="Identificado automaticamente a partir das coordenadas"/>
+          <div class="hint" id="op-address-hint" style="margin-top:6px">Aguardando CTO ou coordenadas.</div>
+        </div>
+      </div>
       <div class="form-group" id="opTituloGroup">
         <label for="op-titulo">Nome da tarefa</label>
         <input type="text" id="op-titulo" placeholder="Descreva a tarefa" autocomplete="off"/>
@@ -689,29 +705,11 @@
           <input type="date" id="op-prazo"/>
         </div>
       </div>
-      <div class="form-row" id="opRompimentoCoordsRow" style="display:none">
-        <div class="form-group">
-          <label for="op-coords">Localização (coordenadas)</label>
-          <div class="wh-input-row">
-            <input type="text" id="op-coords" placeholder="-19.9208, -43.9378" autocomplete="off"/>
-            <button class="sm-btn" type="button" id="opCoordsLookupBtn">Localizar</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="op-address-readonly">Endereço encontrado (Rua / Bairro)</label>
-          <input type="text" id="op-address-readonly" readonly placeholder="Rua e bairro serão preenchidos automaticamente"/>
-          <div class="hint" id="op-address-hint" style="margin-top:6px">Informe as coordenadas para localizar automaticamente.</div>
-        </div>
-      </div>
       <div class="form-row" id="opRompimentoExtraRow" style="display:none">
         <div class="form-group">
           <label for="op-clientes-afetados">Quantidade de clientes afetados</label>
           <input type="number" id="op-clientes-afetados" min="1" step="1" placeholder="Ex.: 120" autocomplete="off"/>
         </div>
-      </div>
-      <div class="form-group" id="opRompimentoSetorGroup" style="display:none">
-        <label for="op-setor-cto">Nome da CTO ou setor</label>
-        <input type="text" id="op-setor-cto" placeholder="Ex.: CTO Centro, Setor Manutenção Norte" autocomplete="off"/>
       </div>
       <div class="form-group op-parent-config" id="opParentConfig">
         <label for="op-task-kind">Tipo de item (estilo ClickUp)</label>
@@ -736,7 +734,7 @@
         <div class="form-group" id="opRegiaoGroup">
           <label for="op-regiao">Região</label>
           <select id="op-regiao">
-            <option value="">Selecione</option>
+            <option value="">Selecione a região</option>
             <option value="Goval">Goval</option>
             <option value="Vale do Aço">Vale do Aço</option>
           </select>

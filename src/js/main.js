@@ -438,6 +438,21 @@ const Utils = {
    Ponto de extensão para outros canais no futuro
 ───────────────────────────────────────────────────────────── */
 const WebhookService = {
+  /** Evita asteriscos nos dados que quebram o negrito do Chat */
+  _chatSafe(s) {
+    return String(s ?? '').replace(/\*/g, '·');
+  },
+
+  /** Cada linha não vazia em negrito (*sintaxe Google Chat*); linhas vazias mantidas. */
+  _rompimentoBoldLines(lines) {
+    return lines
+      .map(line => {
+        if (line === '' || line === null || line === undefined) return '';
+        return `*${this._chatSafe(line)}*`;
+      })
+      .join('\n');
+  },
+
   _formatDurationFromStart(task) {
     const history = Array.isArray(task?.historico) ? task.historico : [];
     if (!history.length) return 'Não foi possível calcular';
@@ -489,19 +504,23 @@ const WebhookService = {
       const localizacao = task.coordenadas || 'Não informada';
       const endereco = task.localizacaoTexto || 'Não informado';
       const taskId = task.taskCode || `ROM-${String(task.id || '').padStart(4, '0')}`;
-      return {
-        text:
-`🚨 ALERTA CRÍTICO - ROMPIMENTO DETECTADO 🚨
-
-⚠️ ROMPIMENTO confirmado no sistema. Ação imediata necessária!
-
-📌 SETOR / CTO: ${setor}
-🌎 REGIÃO: ${regiao}
-👨‍🔧 TÉCNICO RESPONSÁVEL: ${tecnico}
-📍 LOCALIZAÇÃO: ${localizacao}
-🏠 ENDEREÇO: ${endereco}
-🆔 ID DA TAREFA: ${taskId}`,
-      };
+      const head = this._rompimentoBoldLines([
+        '🚨 ALERTA CRÍTICO — ROMPIMENTO DETECTADO 🚨',
+        '',
+        '⚠️ ROMPIMENTO confirmado no sistema. Ação imediata necessária!',
+        '',
+        `📌 SETOR / CTO: ${setor}`,
+        `🌎 REGIÃO: ${regiao}`,
+        `👨‍🔧 TÉCNICO RESPONSÁVEL: ${tecnico}`,
+      ]);
+      const coordBlock = `*${this._chatSafe('📍 COORDENADAS')}*\n${this._chatSafe(localizacao)}`;
+      const tail = this._rompimentoBoldLines([
+        '',
+        `🏠 ENDEREÇO: ${endereco}`,
+        '',
+        `🆔 ID DA TAREFA: ${taskId}`,
+      ]);
+      return { text: `${head}\n\n${coordBlock}${tail}` };
     }
 
     if (category === 'Rompimentos' && (event === 'concluida' || event === 'finalizada')) {
@@ -515,18 +534,23 @@ const WebhookService = {
       const title = event === 'concluida'
         ? '✅ ROMPIMENTO CONCLUÍDO'
         : '🏁 ROMPIMENTO FINALIZADO';
-      return {
-        text:
-`${title}
-
-📌 SETOR / CTO: ${setor}
-🌎 REGIÃO: ${regiao}
-👨‍🔧 TÉCNICO RESPONSÁVEL: ${tecnico}
-📍 LOCALIZAÇÃO: ${localizacao}
-🏠 ENDEREÇO: ${endereco}
-🆔 ID DA TAREFA: ${taskId}
-⏱️ TEMPO DESDE O INÍCIO: ${elapsed}`,
-      };
+      const head = this._rompimentoBoldLines([
+        title,
+        '',
+        `📌 SETOR / CTO: ${setor}`,
+        `🌎 REGIÃO: ${regiao}`,
+        `👨‍🔧 TÉCNICO RESPONSÁVEL: ${tecnico}`,
+      ]);
+      const coordBlock = `*${this._chatSafe('📍 COORDENADAS')}*\n${this._chatSafe(localizacao)}`;
+      const tail = this._rompimentoBoldLines([
+        '',
+        `🏠 ENDEREÇO: ${endereco}`,
+        '',
+        `🆔 ID DA TAREFA: ${taskId}`,
+        '',
+        `⏱️ TEMPO DESDE O INÍCIO: ${elapsed}`,
+      ]);
+      return { text: `${head}\n\n${coordBlock}${tail}` };
     }
 
     const labels = {
@@ -1762,6 +1786,104 @@ const UI = {
   },
 };
 
+/** Base local de CTO/setores: JSONs em `src/data/` (formato `{ nome, lat, lng, aliases? }`); inclui export de viabilidade Ipatinga (KML→pontos). */
+const CtoLocationRegistry = (() => {
+  /** @type {Map<string, { lat: number, lng: number, nome: string }>} */
+  let index = new Map();
+  let loadPromise = null;
+
+  function normalizeLabel(s) {
+    return String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/^\s*cto\s+/i, '')
+      .trim()
+      .replace(/\s+/g, ' ');
+  }
+
+  function ingestEntry(entry) {
+    if (!entry || typeof entry !== 'object') return;
+    const lat = Number(entry.lat);
+    const lng = Number(entry.lng ?? entry.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const nome = String(entry.nome || '').trim();
+    if (!nome) return;
+    const payload = { lat, lng, nome };
+    const keys = new Set([normalizeLabel(nome)]);
+    if (Array.isArray(entry.aliases)) {
+      entry.aliases.forEach(a => {
+        const k = normalizeLabel(a);
+        if (k) keys.add(k);
+      });
+    }
+    keys.forEach(k => {
+      if (k) index.set(k, payload);
+    });
+  }
+
+  function load() {
+    if (loadPromise) return loadPromise;
+    loadPromise = (async () => {
+      const paths = [
+        new URL('src/data/cto-locations-1.json', window.location.href).href,
+        new URL('src/data/cto-locations-2.json', window.location.href).href,
+        new URL('src/data/cto-ipatinga-viabilidade.json', window.location.href).href,
+        new URL('src/data/cto-gv-viabilidade.json', window.location.href).href,
+      ];
+      const results = await Promise.all(
+        paths.map(p =>
+          fetch(p, { cache: 'no-cache' })
+            .then(r => (r.ok ? r.json() : []))
+            .catch(() => [])
+        )
+      );
+      index = new Map();
+      for (const data of results) {
+        const arr = Array.isArray(data) ? data : [];
+        arr.forEach(ingestEntry);
+      }
+    })();
+    return loadPromise;
+  }
+
+  function findByQuery(raw) {
+    if (!index.size) return null;
+    const q = normalizeLabel(raw);
+    if (!q) return null;
+    if (index.has(q)) return index.get(q);
+    let best = null;
+    let bestKeyLen = -1;
+    for (const [k, v] of index) {
+      if (k.startsWith(q) && k.length > bestKeyLen) {
+        best = v;
+        bestKeyLen = k.length;
+      }
+    }
+    if (best) return best;
+    bestKeyLen = -1;
+    for (const [k, v] of index) {
+      if (q.startsWith(k) && k.length > bestKeyLen) {
+        best = v;
+        bestKeyLen = k.length;
+      }
+    }
+    if (best) return best;
+    bestKeyLen = -1;
+    for (const [k, v] of index) {
+      if (k.includes(q) || q.includes(k)) {
+        if (k.length > bestKeyLen) {
+          best = v;
+          bestKeyLen = k.length;
+        }
+      }
+    }
+    return best;
+  }
+
+  return { load, findByQuery };
+})();
+
 
 /* ─────────────────────────────────────────────────────────────
    CONTROLLERS — Lógica de interação do usuário
@@ -2015,6 +2137,7 @@ const Controllers = {
   opTask: {
     _newTaskPreset: null,
     _coordsLookupTimer: null,
+    _setorCtoLookupTimer: null,
     _isAtendimentoCategory(category = Store.currentOpCategory) {
       return category === 'atendimento-cliente';
     },
@@ -2075,14 +2198,57 @@ const Controllers = {
         hint.textContent = 'Não foi possível converter coordenadas em endereço agora.';
       }
     },
+    _applyCtoLookupFromSetor() {
+      if (!this._isRompimentoCategory()) return;
+      const setorHint = document.getElementById('op-setor-cto-hint');
+      const setorEl = document.getElementById('op-setor-cto');
+      if (!setorEl) return;
+      const q = setorEl.value.trim();
+      if (!q) {
+        if (setorHint) setorHint.textContent = '';
+        return;
+      }
+      CtoLocationRegistry.load().then(() => {
+        if (!this._isRompimentoCategory()) return;
+        const hit = CtoLocationRegistry.findByQuery(q);
+        const coordsInput = document.getElementById('op-coords');
+        if (!hit) {
+          if (setorHint && q.length >= 4) {
+            setorHint.textContent = 'Não encontrado na base — preencha as coordenadas manualmente.';
+          } else if (setorHint) setorHint.textContent = '';
+          return;
+        }
+        if (setorHint) {
+          setorHint.textContent = `Base: ${hit.nome} (ajuste as coordenadas se o rompimento for em outro ponto).`;
+        }
+        if (!coordsInput) return;
+        coordsInput.value = `${hit.lat}, ${hit.lng}`;
+        this._resolveCoordsToAddress(coordsInput.value);
+      });
+    },
+    _syncRompimentoRegiaoPlacement(isRompimento) {
+      const regiao = document.getElementById('opRegiaoGroup');
+      const prioridade = document.getElementById('opPrioridadeGroup');
+      const extraRow = document.getElementById('opRompimentoExtraRow');
+      if (!regiao || !prioridade || !extraRow) return;
+      if (isRompimento) {
+        extraRow.after(regiao);
+      } else {
+        prioridade.after(regiao);
+      }
+    },
     _syncCategorySpecificFields(category = Store.currentOpCategory) {
       const isAtendimento = this._isAtendimentoCategory(category);
       const isRompimento = this._isRompimentoCategory(category);
       const modalTitle = document.getElementById('opTaskModalTitle');
+      const modalWrap = document.getElementById('opTaskModal');
+
+      this._syncRompimentoRegiaoPlacement(isRompimento);
+      if (modalWrap) modalWrap.classList.toggle('rompimento-mode', isRompimento);
 
       this._toggleGroup('opTituloGroup', !isRompimento);
       this._toggleGroup('opPrazoGroup', !isRompimento);
-      this._toggleGroup('opPrioridadeGroup', !isRompimento);
+      this._toggleGroup('opPriorityRegionRow', !isRompimento);
 
       this._toggleGroup('opParentConfig', isAtendimento);
       this._toggleGroup('opRompimentoCoordsRow', isRompimento);
@@ -2210,9 +2376,11 @@ const Controllers = {
       const addressHint = document.getElementById('op-address-hint');
       if (coordsInput) coordsInput.value = '';
       if (addressInput) addressInput.value = '';
-      if (addressHint) addressHint.textContent = 'Informe as coordenadas para localizar automaticamente.';
+      if (addressHint) addressHint.textContent = 'Aguardando CTO ou coordenadas.';
       const setorCtoInput = document.getElementById('op-setor-cto');
       if (setorCtoInput) setorCtoInput.value = '';
+      const setorHint = document.getElementById('op-setor-cto-hint');
+      if (setorHint) setorHint.textContent = '';
       this._syncParentTaskUi(category, null);
       this._syncCategorySpecificFields(category);
       this._newTaskPreset = { ...preset };
@@ -2327,14 +2495,16 @@ const Controllers = {
       document.getElementById('op-prioridade').value  = task.prioridade;
       document.getElementById('op-regiao').value      = task.regiao || '';
       const setorCtoInput = document.getElementById('op-setor-cto');
-      if (setorCtoInput) setorCtoInput.value = task.setor || '';
+      if (setorCtoInput) setorCtoInput.value = (task.setor || '').toUpperCase();
+      const setorHintEdit = document.getElementById('op-setor-cto-hint');
+      if (setorHintEdit) setorHintEdit.textContent = '';
       const coordsInput = document.getElementById('op-coords');
       const addressInput = document.getElementById('op-address-readonly');
       const addressHint = document.getElementById('op-address-hint');
       const clientesInput = document.getElementById('op-clientes-afetados');
       if (coordsInput) coordsInput.value = task.coordenadas || '';
       if (addressInput) addressInput.value = task.localizacaoTexto || '';
-      if (addressHint) addressHint.textContent = task.localizacaoTexto ? 'Localização carregada.' : 'Informe as coordenadas para localizar automaticamente.';
+      if (addressHint) addressHint.textContent = task.localizacaoTexto ? 'Localização carregada.' : 'Aguardando CTO ou coordenadas.';
       if (clientesInput) clientesInput.value = task.clientesAfetados || '';
       const deleteBtn = document.getElementById('deleteOpTaskBtn');
       if (deleteBtn) deleteBtn.style.display = 'inline-flex';
@@ -2398,10 +2568,6 @@ const Controllers = {
       document.getElementById('openOpTaskModalBtn').addEventListener('click', () => this.openNewModal());
       document.getElementById('saveOpTaskBtn').addEventListener('click', () => this.save());
       document.getElementById('deleteOpTaskBtn')?.addEventListener('click', () => this.deleteTask());
-      document.getElementById('opCoordsLookupBtn')?.addEventListener('click', () => {
-        const value = document.getElementById('op-coords')?.value || '';
-        this._resolveCoordsToAddress(value);
-      });
       document.getElementById('op-task-kind')?.addEventListener('change', e => {
         const parentSelect = document.getElementById('op-parent-task');
         if (!parentSelect) return;
@@ -2417,6 +2583,21 @@ const Controllers = {
       });
       document.getElementById('op-coords')?.addEventListener('blur', e => {
         this._resolveCoordsToAddress(e.target.value);
+      });
+      document.getElementById('op-setor-cto')?.addEventListener('input', e => {
+        const el = e.target;
+        const s = el.selectionStart;
+        const k = el.selectionEnd;
+        const up = el.value.toUpperCase();
+        if (el.value !== up) {
+          el.value = up;
+          if (typeof s === 'number' && typeof k === 'number') el.setSelectionRange(s, k);
+        }
+        clearTimeout(this._setorCtoLookupTimer);
+        this._setorCtoLookupTimer = setTimeout(() => this._applyCtoLookupFromSetor(), 450);
+      });
+      document.getElementById('op-setor-cto')?.addEventListener('blur', () => {
+        this._applyCtoLookupFromSetor();
       });
       ['closeOpTaskModal','cancelOpTaskModal'].forEach(id =>
         document.getElementById(id)?.addEventListener('click', () => ModalService.close('opTaskModal'))
@@ -2690,6 +2871,7 @@ const Controllers = {
    APP INIT — Bootstrap da aplicação
 ───────────────────────────────────────────────────────────── */
 async function initApp() {
+  CtoLocationRegistry.load().catch(() => {});
   await Store.bootstrapFromRemote();
   Controllers.auth.init();
   // Inicializa todos os controllers
