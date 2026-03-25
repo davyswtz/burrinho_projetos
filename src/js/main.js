@@ -111,6 +111,15 @@ const Store = (() => {
     async getBootstrap() {
       return this.requestAny(['/bootstrap', '/bootstrap.php']);
     },
+    async login(username, password) {
+      return this.requestAny(
+        ['/login', '/login.php'],
+        {
+          method: 'POST',
+          body: JSON.stringify({ username, password }),
+        },
+      );
+    },
     async saveTask(task) {
       return this.requestAny(['/tasks', '/tasks.php'], { method: 'POST', body: JSON.stringify(task) });
     },
@@ -295,6 +304,7 @@ const Store = (() => {
       persistSnapshot();
       return syncConfig();
     },
+    loginRemote: async (username, password) => ApiService.login(username, password),
     isRemoteApiEnabled: () => ApiService.enabled(),
 
     // Config
@@ -1999,17 +2009,12 @@ const CtoLocationRegistry = (() => {
 const Controllers = {
   auth: {
     _sessionKey: 'planner.session.v1',
-    /** Substituir via `APP_CONFIG.authUsers` em produção (não commitar senhas reais em repositório público). */
-    _allowedUsersFallback: [{ user: 'projetos', pass: '123' }],
     _getAllowedUsers() {
       const list = window.APP_CONFIG && window.APP_CONFIG.authUsers;
-      if (Array.isArray(list) && list.length) {
-        return list.filter(
-          u => u && typeof u.user === 'string' && typeof u.pass === 'string'
-        );
-      }
-      return this._allowedUsersFallback;
+      if (!Array.isArray(list) || !list.length) return [];
+      return list.filter(u => u && typeof u.user === 'string' && typeof u.pass === 'string');
     },
+    _submitting: false,
     _isAuthenticated() {
       return localStorage.getItem(this._sessionKey) === '1';
     },
@@ -2019,20 +2024,44 @@ const Controllers = {
     _unlock() {
       document.body.classList.remove('auth-locked');
     },
-    _login(user, pass) {
+    async _login(user, pass) {
       if (!user || !pass) {
         ToastService.show('Preencha usuário e senha para entrar', 'danger');
         return false;
       }
       const normalizedUser = String(user).trim().toLowerCase();
       const normalizedPass = String(pass).trim();
-      const valid = this._getAllowedUsers().some(
-        (item) => item.user.toLowerCase() === normalizedUser && item.pass === normalizedPass
-      );
-      if (!valid) {
+
+      // Preferência: autenticar no servidor (quando a API remota estiver habilitada).
+      if (Store.isRemoteApiEnabled()) {
+        try {
+          const res = await Store.loginRemote(normalizedUser, normalizedPass);
+          if (res && res.ok) {
+            localStorage.setItem(this._sessionKey, '1');
+            this._unlock();
+            return true;
+          }
+        } catch {
+          ToastService.show('Falha ao autenticar no servidor', 'danger');
+          return false;
+        }
         ToastService.show('Usuário ou senha inválidos', 'danger');
         return false;
       }
+
+      // Fallback apenas para ambientes sem API remota (configure em `config.js` via authUsers).
+      const validLocal = this._getAllowedUsers().some(
+        item => item.user.toLowerCase() === normalizedUser && item.pass === normalizedPass
+      );
+      if (!validLocal) {
+        if (!this._getAllowedUsers().length) {
+          ToastService.show('Autenticação indisponível: configure `authUsers` em `config.js` ou use deploy com API.', 'danger');
+        } else {
+          ToastService.show('Usuário ou senha inválidos', 'danger');
+        }
+        return false;
+      }
+
       localStorage.setItem(this._sessionKey, '1');
       this._unlock();
       return true;
@@ -2049,12 +2078,20 @@ const Controllers = {
       else this._lock();
 
       const form = document.getElementById('loginForm');
-      form?.addEventListener('submit', e => {
+      form?.addEventListener('submit', async e => {
         e.preventDefault();
-        const user = document.getElementById('loginUser')?.value.trim();
-        const pass = document.getElementById('loginPass')?.value.trim();
-        if (this._login(user, pass)) {
-          ToastService.show('Login realizado com sucesso', 'success');
+        if (this._submitting) return;
+        this._submitting = true;
+        try {
+          const user = document.getElementById('loginUser')?.value.trim();
+          const pass = document.getElementById('loginPass')?.value.trim();
+
+          const ok = await this._login(user, pass);
+          if (ok) {
+            ToastService.show('Login realizado com sucesso', 'success');
+          }
+        } finally {
+          this._submitting = false;
         }
       });
 
@@ -2988,8 +3025,22 @@ const Controllers = {
 ───────────────────────────────────────────────────────────── */
 async function initApp() {
   CtoLocationRegistry.load().catch(() => {});
-  await Store.bootstrapFromRemote();
   Controllers.auth.init();
+
+  // Bootstrap remoto pode demorar e bloquear interações do login.
+  // Garantimos um "timeout" para manter a UI responsiva.
+  const bootstrapWithTimeout = async (timeoutMs) => {
+    try {
+      return await Promise.race([
+        Store.bootstrapFromRemote(),
+        new Promise(resolve => setTimeout(() => resolve(false), timeoutMs)),
+      ]);
+    } catch {
+      return false;
+    }
+  };
+
+  await bootstrapWithTimeout(8000);
   // Inicializa todos os controllers
   Controllers.sidebar.init();
   Controllers.task.init();
@@ -3012,7 +3063,7 @@ async function initApp() {
   UI.updateClock();
   setInterval(() => UI.updateClock(), 30000);
   setInterval(async () => {
-    const updated = await Store.bootstrapFromRemote();
+    const updated = await bootstrapWithTimeout(8000);
     if (!updated) return;
     UI.renderDashboard();
     UI.renderOpPage();

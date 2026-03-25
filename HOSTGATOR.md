@@ -8,7 +8,8 @@ Guia para publicar o painel com **PHP + MySQL** (cPanel), com dados compartilhad
 2. Crie um banco (ex.: `usuario_burrinho`) e um usuário com senha forte.
 3. **Associe** o usuário ao banco com **Todos os privilégios**.
 4. Abra **phpMyAdmin**, selecione o banco e vá em **Importar**.
-5. Envie o arquivo **`api/schema.sql`** e execute (ou cole o SQL na aba SQL).
+5. Envie o arquivo **`api/schema.sql`** e execute (ou cole o SQL na aba SQL).  
+   O schema também cria a tabela de autenticação **`usuario`** e já insere os usuários padrão do painel.
 
 Se você já tinha uma versão antiga só com parte das colunas de `op_tasks`, rode também **`api/migrations/001_op_tasks_rompimento_fields.sql`** (se der erro de coluna duplicada, pode ignorar).
 

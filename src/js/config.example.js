@@ -23,6 +23,6 @@ window.APP_CONFIG = {
    */
   // ctoDataBase: 'https://meusite.com/subpasta/src/data/',
 
-  /** Credenciais de login (substitui o demo interno `projetos`/`123`). */
+  /** Credenciais de login (fallback apenas quando API remota estiver desabilitada). */
   // authUsers: [{ user: 'nome', pass: 'senha-segura' }],
 };
