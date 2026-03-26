@@ -599,7 +599,57 @@ const WebhookService = {
     if (!config.url || !config.events[event]) return;
 
     const message = this._buildMessage(event, task, category);
-    await this._post(config.url, message);
+
+    // Google Chat threading (tópicos): cria no "andamento" e responde no mesmo thread nas demais.
+    const threadKey = this._ensureThreadKeyForTask(event, task);
+    const url = threadKey ? this._withThreadParams(config.url, threadKey) : config.url;
+    const payload = threadKey ? { ...message, thread: { threadKey } } : message;
+
+    await this._post(url, payload);
+  },
+
+  _taskStableId(task) {
+    const cat = String(task?.categoria ?? task?.source ?? '').trim() || 'task';
+    const code = String(task?.taskCode ?? '').trim();
+    const id = String(task?.id ?? '').trim();
+    return code || (id ? `${cat}-${id}` : `${cat}-unknown`);
+  },
+
+  _ensureThreadKeyForTask(event, task) {
+    // Se já tem, usa.
+    const existing = String(task?.chatThreadKey ?? '').trim();
+    if (existing) return existing;
+
+    // Regra pedida: só cria thread quando entrar em andamento.
+    if (event !== 'andamento') return '';
+
+    // ThreadKey precisa ser estável e curto; usar código/ID da tarefa.
+    const key = `burrinho-${this._taskStableId(task)}`.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120);
+
+    // Persistir no store (opTask ou task geral), para próximas mensagens caírem no mesmo tópico.
+    try {
+      const idNum = Number(task?.id);
+      if (task?.source === 'dashboard') {
+        if (Number.isFinite(idNum)) Store.updateTask(idNum, { chatThreadKey: key });
+      } else if (Number.isFinite(idNum)) {
+        Store.updateOpTask(idNum, { chatThreadKey: key });
+      }
+      // Também atualiza o objeto em memória, quando for o mesmo reference.
+      task.chatThreadKey = key;
+    } catch {
+      /* ignore */
+    }
+    return key;
+  },
+
+  _withThreadParams(webhookUrl, threadKey) {
+    // Para webhooks, a forma mais compatível é passar threadKey + messageReplyOption na URL.
+    // Isso garante que o Chat trate o POST como "resposta no tópico" quando possível.
+    const base = String(webhookUrl || '');
+    if (!base) return base;
+    const sep = base.includes('?') ? '&' : '?';
+    const tk = encodeURIComponent(threadKey);
+    return `${base}${sep}threadKey=${tk}&messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD`;
   },
 
   /** Monta o payload formatado */
