@@ -198,7 +198,7 @@ body.auth-locked .login-screen { display: flex; }
   padding: 18px 14px 14px; border-bottom: 1px solid var(--border);
   min-height: 62px; flex-shrink: 0;
 }
-.logo { display: flex; align-items: center; gap: 10px; overflow: hidden; }
+.logo { display: flex; align-items: center; gap: 6px; overflow: hidden; }
 .logo-icon {
   width: 30px; height: 30px; border-radius: var(--radius);
   background: var(--green); display: flex; align-items: center; justify-content: center;
@@ -416,16 +416,24 @@ body.auth-locked .login-screen { display: flex; }
 .wh-disconnect:hover { color: var(--danger); }
 
 /* ═══ STAT CARDS ════════════════════════════════════════════ */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.stats {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+  grid-auto-rows: 1fr;
+}
 
 /* Deixa os cards de estatística mais “organizados” sem esticar demais */
 #page-tarefas .stats {
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
 }
 
 /* Cards de status: mesma altura + números bem legíveis */
+#page-dashboard .stat-card,
 #page-tarefas .stat-card {
   display: flex;
   flex-direction: column;

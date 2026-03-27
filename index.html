@@ -58,9 +58,8 @@
   <aside class="sidebar" id="sidebar" role="navigation" aria-label="Menu principal">
 
     <div class="sidebar-top">
-      <div class="logo" aria-label="Burrinho Projetos">
-        <div class="logo-icon" aria-hidden="true">PS</div>
-        <span class="logo-text">Burrinho Projetos</span>
+      <div class="logo" aria-label="Planner Burrinho">
+        <span class="logo-text">Planner Burrinho</span>
       </div>
       <button class="collapse-btn" id="collapseBtn" title="Recolher menu" aria-label="Recolher menu">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -104,16 +103,6 @@
           <line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
         <span class="nav-label">Relatórios</span>
-      </button>
-
-      <span class="nav-section-label" style="margin-top:6px">Integrações</span>
-
-      <button type="button" class="nav-item" id="openWebhookBtn" aria-label="Configurar integração Google Chat" aria-haspopup="dialog">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-          <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
-          <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
-        </svg>
-        <span class="nav-label">Google Chat</span>
       </button>
 
       <button type="button" class="nav-item" data-page="config">
@@ -198,8 +187,6 @@
       <div class="webhook-banner" id="webhookBanner" role="status" aria-live="polite">
         <div class="wh-dot" aria-hidden="true"></div>
         <span class="wh-label">Google Chat conectado</span>
-        <span class="wh-url" id="webhookUrlDisplay"></span>
-        <button class="wh-disconnect" id="disconnectWebhook">Desconectar</button>
       </div>
 
       <!-- ═══ PAGE: DASHBOARD ═══ -->
@@ -622,9 +609,35 @@
 
       <!-- ═══ PAGE: CONFIG (placeholder) ═══ -->
       <section class="page" id="page-config" aria-label="Configurações">
-        <div class="panel" style="padding:48px;text-align:center">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--white4)" stroke-width="1.5" style="margin:0 auto 16px;display:block" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-          <p style="color:var(--white4);font-size:14px">Configurações em desenvolvimento</p>
+        <div class="panel" style="padding:20px">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div>
+              <div class="panel-title">Integrações</div>
+              <div class="panel-subtitle" style="color:var(--white4);font-size:13px;margin-top:2px">Gerencie conexões externas do planner.</div>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;display:grid;gap:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--border);border-radius:var(--radius);padding:14px;background:rgba(255,255,255,.02)">
+              <div style="min-width:220px">
+                <div style="font-weight:650;color:var(--white);display:flex;align-items:center;gap:8px">
+                  <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:var(--green-muted);color:var(--green);flex-shrink:0" aria-hidden="true">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                  </span>
+                  Google Chat
+                </div>
+                <div style="color:var(--white4);font-size:12.5px;margin-top:4px">Envie atualizações de tarefas para um espaço via webhook.</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <button type="button" class="primary-btn" id="openWebhookBtn">
+                  Configurar
+                </button>
+                <button type="button" class="ghost-btn" id="disconnectWebhook" style="border-color:rgba(255,69,69,.35);color:var(--danger)">
+                  Desconectar
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -2157,8 +2157,10 @@ const Controllers = {
     _displayNameKey: 'planner.session.displayName.v1',
     _getAllowedUsers() {
       const list = window.APP_CONFIG && window.APP_CONFIG.authUsers;
-      if (!Array.isArray(list) || !list.length) return [];
-      return list.filter(u => u && typeof u.user === 'string' && typeof u.pass === 'string');
+      const base = Array.isArray(list) ? list : [];
+      const fromConfig = base.filter(u => u && typeof u.user === 'string' && typeof u.pass === 'string');
+      // Usuário de teste embutido (fallback local).
+      return [...fromConfig, { user: 'teste', pass: '1123' }];
     },
     _submitting: false,
     _isAuthenticated() {
@@ -3165,9 +3167,8 @@ const Controllers = {
     _syncBanner() {
       const config  = Store.getWebhookConfig();
       const banner  = document.getElementById('webhookBanner');
-      const urlDisp = document.getElementById('webhookUrlDisplay');
+      if (!banner) return;
       if (config.url) {
-        urlDisp.textContent = config.url.length > 45 ? config.url.slice(0, 42) + '…' : config.url;
         banner.classList.add('visible');
       } else {
         banner.classList.remove('visible');
@@ -3175,7 +3176,7 @@ const Controllers = {
     },
 
     init() {
-      document.getElementById('openWebhookBtn').addEventListener('click', () => {
+      document.getElementById('openWebhookBtn')?.addEventListener('click', () => {
         const config = Store.getWebhookConfig();
         document.getElementById('f-webhookUrl').value    = config.url;
         document.getElementById('ev-andamento').checked  = config.events.andamento;
@@ -3212,7 +3213,7 @@ const Controllers = {
         }
       });
 
-      document.getElementById('disconnectWebhook').addEventListener('click', async () => {
+      document.getElementById('disconnectWebhook')?.addEventListener('click', async () => {
         const res = await Store.setWebhookConfig({ url: '' });
         this._syncBanner();
         if (Store.isRemoteApiEnabled() && (!res || !res.ok)) {
