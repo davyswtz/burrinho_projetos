@@ -1,0 +1,11 @@
+# Burrinho Projetos — coloque na raiz do site na HostGator (public_html)
+# ou na raiz da pasta do app (ex.: public_html/burrinho/).
+
+DirectoryIndex index.html index.php
+
+AddDefaultCharset utf-8
+
+# Após SSL ativo no cPanel, descomente para forçar HTTPS:
+# RewriteEngine On
+# RewriteCond %{HTTPS} !=on
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

@@ -14,6 +14,10 @@
  * }} AppConfig
  */
 window.APP_CONFIG = {
+  /**
+   * URL base da pasta `api` (sem barra no final). Ex.: https://meusite.com/burrinho/api
+   * Deixe '' para auto-detectar: mesmo host + caminho da página + `/api` (funciona em subpastas na HostGator).
+   */
   apiBaseUrl: '',
 
   /** URL do webhook Google Chat (só para ambiente fechado; em geral configure pelo modal do app). */

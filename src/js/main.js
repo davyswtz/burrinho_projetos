@@ -58,42 +58,6 @@ function normalizeTechName(name) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-/** Emojis exibidos no seletor do chat (Unicode; um item por célula). */
-const BP_CHAT_EMOJI_LIST = [
-  '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '😉', '😍', '🥰', '😘', '😗', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤔', '😐', '😑', '🙄', '😬', '🤥', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🥵', '🥶', '🥴', '😵', '🤯', '🥳', '😎', '🤓', '😕', '🙁', '☹️', '😮', '😯', '😲', '😳', '🥺', '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱', '😖', '😣', '😞', '😓', '😩', '😫', '🥱', '😤', '😡', '😠', '🤬', '💀', '💩', '🤡', '👻', '👽', '🤖',
-  '👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '👋', '🤝', '🙏', '💪', '👏', '🙌', '✋', '🖐️', '☝️', '👆', '👇', '👉', '👈', '✍️',
-  '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '💔', '💕', '💖', '💗', '💘', '💝',
-  '🔥', '✨', '⭐', '🌟', '💫', '💥', '💯', '✅', '❌', '❓', '❗', '💬', '🗯️', '💭', '⚠️', '🎉', '🎊', '🎁', '🏆', '🥇', '🎯', '⚽', '🏀', '🎮', '🎵', '📷', '📱', '💻',
-  '☕', '🍕', '🍔', '🍰', '🍺', '🥂', '🌮', '🍣',
-  '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦆', '🐝', '🦋', '🐢', '🐍', '🐙', '🐳', '🦈', '🌈', '☀️', '🌙', '⛅', '🌧️',
-];
-
-/**
- * Insere texto na posição do cursor respeitando maxlength do campo.
- * @param {HTMLInputElement | HTMLTextAreaElement | null} el
- * @param {string} text
- */
-function insertTextAtInputCursor(el, text) {
-  if (!el || text === '') return;
-  const max = typeof el.maxLength === 'number' && el.maxLength > 0 ? el.maxLength : 2500;
-  const start = typeof el.selectionStart === 'number' ? el.selectionStart : 0;
-  const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : 0;
-  const val = el.value;
-  const next = val.slice(0, start) + text + val.slice(end);
-  if (next.length > max) {
-    ToastService.show('Mensagem no limite de caracteres.', 'warning');
-    return;
-  }
-  el.value = next;
-  const pos = start + text.length;
-  try {
-    el.setSelectionRange(pos, pos);
-  } catch {
-    /* some inputs */
-  }
-  el.focus();
-}
-
 function getTechDirectory(regionKey = '') {
   const cfg = window.APP_CONFIG || {};
   const byRegion = cfg.techsByRegion && typeof cfg.techsByRegion === 'object' ? cfg.techsByRegion : {};
@@ -185,12 +149,12 @@ const SESSION_USER_KEY = 'planner.session.userKey.v1';
 const USER_AVATAR_MAP_KEY = 'planner.userAvatarByUser.v1';
 const GUEST_AVATAR_KEY = 'planner.avatar.guest.v1';
 const AVATAR_ASSET_OPTIONS = [
-  { id: 'asset-muted', label: 'Burrinho Muted', url: './assets/avatares/burrinho%20muted.png' },
-  { id: 'asset-cabecudo', label: 'Burrinho Cabeçudo', url: './assets/avatares/burrinho%20cabe%C3%A7udo.png' },
-  { id: 'asset-empresario', label: 'Burrinho Empresario', url: './assets/avatares/burrinho%20empresario.jpg' },
-  { id: 'asset-cruzeirense', label: 'Burrinha Cruzeirense', url: './assets/avatares/burrinha%20cruzeirense.png' },
-  { id: 'asset-dev', label: 'Burrinho Dev', url: './assets/avatares/burrinho%20dev.png' },
-  { id: 'asset-panguao', label: 'Burrinho Panguao', url: './assets/avatares/burrinho%20panguao.png' },
+  { id: 'asset-muted', label: 'Burrinho Muted', url: './assets/avatares/burrinho-muted.png' },
+  { id: 'asset-cabecudo', label: 'Burrinho Cabeçudo', url: './assets/avatares/burrinho-cabecudo.png' },
+  { id: 'asset-empresario', label: 'Burrinho Empresario', url: './assets/avatares/burrinho-empresario.jpg' },
+  { id: 'asset-cruzeirense', label: 'Burrinha Cruzeirense', url: './assets/avatares/burrinha-cruzeirense.png' },
+  { id: 'asset-dev', label: 'Burrinho Dev', url: './assets/avatares/burrinho-dev.png' },
+  { id: 'asset-panguao', label: 'Burrinho Panguao', url: './assets/avatares/burrinho-panguao.png' },
 ];
 
 function isAuthenticatedSession() {
@@ -256,8 +220,9 @@ const Store = (() => {
   };
 
   /**
-   * Base da API: `APP_CONFIG.apiBaseUrl` (string), ou mesma origem + `/api` em produção.
-   * Em localhost / 127.0.0.1 não ativa automático (Live Server não roda PHP/Node) — use só localStorage ou defina a URL manualmente.
+   * Base da API: `APP_CONFIG.apiBaseUrl` (string), ou origem + pasta do app + `/api`.
+   * Ex.: `https://site.com/burrinho/index.html` → `https://site.com/burrinho/api` (comum na HostGator).
+   * Em localhost não ativa automático — defina `apiBaseUrl` em `config.js` se precisar testar API local.
    */
   const resolveApiBaseUrl = () => {
     const raw = APP_CONFIG.apiBaseUrl;
@@ -265,16 +230,26 @@ const Store = (() => {
     if (typeof raw === 'string') {
       const trimmed = raw.trim().replace(/\/$/, '');
       if (trimmed) return trimmed;
-      return '';
     }
     try {
-      const { protocol, hostname, origin } = window.location;
+      const { protocol, hostname, origin, pathname } = window.location;
       if (protocol !== 'http:' && protocol !== 'https:') return '';
       const h = String(hostname || '').toLowerCase();
       if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.local')) {
         return '';
       }
-      return `${origin}/api`.replace(/\/$/, '');
+      const path = String(pathname || '/');
+      let p = path;
+      if (p !== '/' && p.endsWith('/')) p = p.replace(/\/+$/, '');
+      const segments = p.split('/').filter(Boolean);
+      if (segments.length) {
+        const last = segments[segments.length - 1];
+        if (/\.[a-z0-9]{2,12}$/i.test(last)) segments.pop();
+      }
+      const folder = segments.length ? `/${segments.join('/')}` : '';
+      const rel = folder ? `${folder}/api` : '/api';
+      const u = new URL(rel, origin);
+      return u.href.replace(/\/$/, '');
     } catch {
       /* ignore */
     }
@@ -310,15 +285,27 @@ const Store = (() => {
           ...rest,
           signal: ctrl.signal,
           headers,
+          credentials: 'same-origin',
         });
         clearTimeout(kill);
-        if (!response.ok) return null;
-        const text = await response.text();
-        const head = text.trim().slice(0, 12).toLowerCase();
-        if (!text.trim() || head.startsWith('<!') || head.startsWith('<?') || head.startsWith('<htm')) {
+        const rawText = await response.text();
+        const text = rawText.replace(/^\uFEFF/, '').trim();
+        if (!text) return null;
+        const head = text.slice(0, 24).toLowerCase();
+        if (head.startsWith('<!') || head.startsWith('<?') || head.startsWith('<htm') || head.startsWith('<html')) {
           return null;
         }
-        return JSON.parse(text);
+        let parsed = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          return null;
+        }
+        if (!response.ok) {
+          if (parsed && typeof parsed === 'object' && 'ok' in parsed) return parsed;
+          return null;
+        }
+        return parsed;
       } catch {
         return null;
       }
@@ -331,7 +318,7 @@ const Store = (() => {
       return null;
     },
     async getBootstrap() {
-      return this.requestAny(['/bootstrap', '/bootstrap.php']);
+      return this.requestAny(['/bootstrap.php', '/bootstrap']);
     },
     async login(username, password) {
       // Uma única rota: evita uma ida HTTP extra em hosts que não têm `/login`.
@@ -341,26 +328,16 @@ const Store = (() => {
       });
     },
     async saveTask(task) {
-      return this.requestAny(['/tasks', '/tasks.php'], { method: 'POST', body: JSON.stringify(task) });
+      return this.requestAny(['/tasks.php', '/tasks'], { method: 'POST', body: JSON.stringify(task) });
     },
     async saveOpTask(task) {
-      return this.requestAny(['/op-tasks', '/op_tasks.php'], { method: 'POST', body: JSON.stringify(task) });
+      return this.requestAny(['/op_tasks.php', '/op-tasks'], { method: 'POST', body: JSON.stringify(task) });
     },
     async deleteOpTask(id, cascade = false) {
-      return this.requestAny(['/op-tasks', '/op_tasks.php'], { method: 'DELETE', body: JSON.stringify({ id, cascade }) });
+      return this.requestAny(['/op_tasks.php', '/op-tasks'], { method: 'DELETE', body: JSON.stringify({ id, cascade }) });
     },
     async saveConfig(payload) {
-      return this.requestAny(['/config', '/config.php'], { method: 'POST', body: JSON.stringify(payload) });
-    },
-    async getChatMessages(sinceId = 0, limit = 60) {
-      const qs = new URLSearchParams();
-      if (sinceId) qs.set('since_id', String(sinceId));
-      if (limit) qs.set('limit', String(limit));
-      const suffix = qs.toString() ? `?${qs.toString()}` : '';
-      return this.request(`/chat_messages.php${suffix}`, { method: 'GET', timeoutMs: 8000 });
-    },
-    async sendChatMessage(payload) {
-      return this.request('/chat_messages.php', { method: 'POST', body: JSON.stringify(payload), timeoutMs: 25000 });
+      return this.requestAny(['/config.php', '/config'], { method: 'POST', body: JSON.stringify(payload) });
     },
     buildUrl(path) {
       const p = String(path || '');
@@ -590,9 +567,6 @@ const Store = (() => {
     },
     loginRemote: async (username, password) => ApiService.login(username, password),
     isRemoteApiEnabled: () => ApiService.enabled(),
-    fetchChatMessages: async (sinceId = 0, limit = 60) => ApiService.getChatMessages(sinceId, limit),
-    postChatMessage: async (payload) => ApiService.sendChatMessage(payload),
-    getApiBaseUrl: () => String(ApiService.baseUrl || ''),
 
     // Config
     getPlannerConfig: () => ({ ...plannerConfig }),
@@ -609,14 +583,14 @@ const Store = (() => {
       const note = { id: nextCalendarNoteId++, ...data, createdAt: new Date().toISOString() };
       calendarNotes.push(note);
       persistCalendarNotes();
-      ApiService.requestAny(['/calendar-notes', '/calendar_notes.php'], { method: 'POST', body: JSON.stringify(note) });
+      ApiService.requestAny(['/calendar_notes.php', '/calendar-notes'], { method: 'POST', body: JSON.stringify(note) });
       return note;
     },
     removeCalendarNote: (id) => {
       const sizeBefore = calendarNotes.length;
       calendarNotes = calendarNotes.filter(n => n.id !== id);
       if (calendarNotes.length !== sizeBefore) persistCalendarNotes();
-      ApiService.requestAny(['/calendar-notes', '/calendar_notes.php'], { method: 'DELETE', body: JSON.stringify({ id }) });
+      ApiService.requestAny(['/calendar_notes.php', '/calendar-notes'], { method: 'DELETE', body: JSON.stringify({ id }) });
     },
     bootstrapFromRemote: async () => {
       const payload = await ApiService.getBootstrap();
@@ -2887,7 +2861,6 @@ const UI = {
       tarefas:   { title: 'Tarefas',      crumb: 'Operacionais' },
       calendario:{ title: 'Calendário',   crumb: 'Agenda' },
       relatorios:{ title: 'Relatórios',   crumb: 'Análises' },
-      chat:      { title: 'Chat',         crumb: 'Geral' },
       config:    { title: 'Configurações',crumb: 'Sistema' },
     };
     const meta = titles[page] || { title: page, crumb: '' };
@@ -2900,8 +2873,6 @@ const UI = {
     if (page === 'tarefas') this.renderOpPage();
     if (page === 'calendario') this.renderCalendarPage();
     if (page === 'relatorios') this.renderReportsPage();
-    if (page === 'chat') Controllers.chat.open();
-    else Controllers.chat.close();
   },
 
   /* ── Full dashboard render ─────────────────────────────── */
@@ -3227,309 +3198,6 @@ const Controllers = {
       });
 
       document.getElementById('logoutBtn')?.addEventListener('click', () => this.logout());
-    },
-  },
-
-  chat: {
-    _pollMs: 2500,
-    _timer: null,
-    _lastId: 0,
-    _loading: false,
-    _isOnChatPage() {
-      return Store.currentPage === 'chat';
-    },
-    _formatChatTime(raw) {
-      const s = String(raw || '').trim();
-      if (!s) return '';
-      try {
-        const normalized = s.includes('T') ? s : s.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/, '$1T$2');
-        const d = new Date(normalized);
-        if (Number.isNaN(d.getTime())) return s.slice(0, 16);
-        return d.toLocaleString('pt-BR', {
-          day: '2-digit',
-          month: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-      } catch {
-        return s.slice(0, 16);
-      }
-    },
-    _status(text) {
-      const el = document.getElementById('chatStatus');
-      if (el) el.textContent = text;
-    },
-    _appendMessage(msg) {
-      const root = document.getElementById('chatMessages');
-      if (!root || !msg) return;
-
-      const me = getSessionUserKey();
-      const authorKey = String(msg.username || '').trim().toLowerCase();
-      const isMine = Boolean(me && authorKey && authorKey === me);
-
-      const row = document.createElement('div');
-      row.className = `chat-row ${isMine ? 'chat-row--mine' : 'chat-row--other'}`;
-      row.setAttribute('data-chat-author', authorKey || '');
-
-      if (!isMine) {
-        const av = document.createElement('div');
-        av.className = 'chat-msg-avatar';
-        const label = String(msg.displayName || msg.username || '?');
-        av.textContent = Utils.getInitials(label);
-        av.style.background = Utils.getAvatarColor(label);
-        av.setAttribute('aria-hidden', 'true');
-        row.appendChild(av);
-      }
-
-      const bubble = document.createElement('div');
-      bubble.className = 'chat-bubble';
-
-      const meta = document.createElement('div');
-      meta.className = `chat-bubble-meta${isMine ? ' chat-bubble-meta--mine' : ''}`;
-
-      if (!isMine) {
-        const nameEl = document.createElement('span');
-        nameEl.className = 'chat-bubble-name';
-        nameEl.textContent = String(msg.displayName || msg.username || '—');
-        meta.appendChild(nameEl);
-      }
-
-      const timeEl = document.createElement('span');
-      timeEl.className = 'chat-bubble-time';
-      timeEl.textContent = this._formatChatTime(msg.createdAt);
-      meta.appendChild(timeEl);
-      bubble.appendChild(meta);
-
-      const text = String(msg.message || '').trim();
-      if (text) {
-        const body = document.createElement('div');
-        body.className = 'chat-bubble-text';
-        body.textContent = text;
-        bubble.appendChild(body);
-      }
-
-      const hasImage = Boolean(msg.hasImage) || Boolean(msg.image);
-      if (hasImage) {
-        const img = document.createElement('img');
-        img.className = 'chat-bubble-img';
-        const base = Store.getApiBaseUrl();
-        img.src = base ? `${base}/chat_image.php?id=${encodeURIComponent(String(msg.id))}` : `./api/chat_image.php?id=${encodeURIComponent(String(msg.id))}`;
-        img.alt = 'Imagem enviada no chat';
-        img.loading = 'lazy';
-        bubble.appendChild(img);
-      }
-
-      row.appendChild(bubble);
-      root.appendChild(row);
-    },
-    _scrollToBottomIfNearEnd() {
-      const root = document.getElementById('chatMessages');
-      if (!root) return;
-      const dist = root.scrollHeight - root.scrollTop - root.clientHeight;
-      if (dist < 140) root.scrollTop = root.scrollHeight;
-    },
-    async _pollOnce() {
-      if (!this._isOnChatPage()) return;
-      if (!Store.isRemoteApiEnabled()) {
-        this._status('Chat indisponível: API não configurada.');
-        return;
-      }
-      if (this._loading) return;
-      this._loading = true;
-      try {
-        const res = await Store.fetchChatMessages(this._lastId, this._lastId ? 120 : 60);
-        if (!res || !res.ok || !Array.isArray(res.messages)) {
-          this._status('Sem resposta do servidor (timeout ou erro). Verifique a API /api.');
-          return;
-        }
-        if (!res.messages.length && !this._lastId) {
-          this._status('Sem mensagens ainda.');
-          return;
-        }
-        this._status('Online');
-        for (const m of res.messages) {
-          const id = Number(m.id) || 0;
-          if (id > this._lastId) this._lastId = id;
-          this._appendMessage(m);
-        }
-        this._scrollToBottomIfNearEnd();
-      } finally {
-        this._loading = false;
-      }
-    },
-    async send(text, imageDataUrl = '') {
-      if (!Store.isRemoteApiEnabled()) {
-        ToastService.show('Chat indisponível (API não configurada).', 'danger');
-        return;
-      }
-      const msg = String(text || '').trim();
-      const imgUrl = String(imageDataUrl || '').trim();
-      if (!msg && !imgUrl) return;
-      const username = getSessionUserKey();
-      const displayName = (localStorage.getItem('planner.session.displayName.v1') || '').trim() || username || 'Usuário';
-      if (!username) {
-        ToastService.show('Faça login para enviar mensagens.', 'danger');
-        return;
-      }
-      const res = await Store.postChatMessage({ username, displayName, message: msg, imageDataUrl: imgUrl });
-      if (!res || !res.ok) {
-        ToastService.show('Não foi possível enviar a mensagem.', 'danger');
-        return;
-      }
-      const returned = res.message;
-      if (returned && Number(returned.id) > this._lastId) {
-        this._lastId = Number(returned.id);
-        this._appendMessage(returned);
-        this._scrollToBottomIfNearEnd();
-      } else {
-        await this._pollOnce();
-      }
-    },
-    open() {
-      const root = document.getElementById('chatMessages');
-      if (root) root.innerHTML = '';
-      this._lastId = 0;
-      this._status('Conectando…');
-      void this._pollOnce();
-      if (this._timer) clearInterval(this._timer);
-      this._timer = setInterval(() => void this._pollOnce(), this._pollMs);
-    },
-    close() {
-      if (this._timer) clearInterval(this._timer);
-      this._timer = null;
-      const pop = document.getElementById('chatEmojiPopover');
-      const btn = document.getElementById('chatEmojiBtn');
-      if (pop) {
-        pop.hidden = true;
-        pop.setAttribute('aria-hidden', 'true');
-      }
-      if (btn) btn.setAttribute('aria-expanded', 'false');
-    },
-    init() {
-      const form = document.getElementById('chatForm');
-      if (form && form.dataset.bpBound === '1') return;
-      if (form) form.dataset.bpBound = '1';
-      const input = document.getElementById('chatInput');
-      const attachBtn = document.getElementById('chatAttachBtn');
-      const emojiBtn = document.getElementById('chatEmojiBtn');
-      const fileInput = document.getElementById('chatImageInput');
-      const preview = document.getElementById('chatImagePreview');
-      let pendingImageDataUrl = '';
-
-      const renderPreview = () => {
-        if (!preview) return;
-        if (!pendingImageDataUrl) {
-          preview.hidden = true;
-          preview.innerHTML = '';
-          return;
-        }
-        preview.hidden = false;
-        preview.innerHTML = `
-          <div class="chat-preview-row">
-            <div class="chat-preview-title">Imagem anexada</div>
-            <button type="button" class="ghost-btn" id="chatRemoveImageBtn">Remover</button>
-          </div>
-          <img class="chat-preview-img" src="${Utils.escapeHtml(pendingImageDataUrl)}" alt="Prévia da imagem anexada"/>
-        `;
-        preview.querySelector('#chatRemoveImageBtn')?.addEventListener('click', () => {
-          pendingImageDataUrl = '';
-          if (fileInput) fileInput.value = '';
-          renderPreview();
-        });
-      };
-
-      const popover = document.getElementById('chatEmojiPopover');
-      const emojiGrid = document.getElementById('chatEmojiGrid');
-
-      const syncEmojiPopoverA11y = (open) => {
-        if (!popover) return;
-        popover.setAttribute('aria-hidden', open ? 'false' : 'true');
-        emojiBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
-      };
-
-      const setEmojiPopoverOpen = (open) => {
-        if (!popover) return;
-        popover.hidden = !open;
-        syncEmojiPopoverA11y(open);
-      };
-
-      const buildEmojiGridOnce = () => {
-        if (!emojiGrid || emojiGrid.dataset.bpBuilt === '1') return;
-        emojiGrid.dataset.bpBuilt = '1';
-        const frag = document.createDocumentFragment();
-        for (const ch of BP_CHAT_EMOJI_LIST) {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'chat-emoji-cell';
-          b.textContent = ch;
-          b.title = `Inserir ${ch}`;
-          b.addEventListener('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            insertTextAtInputCursor(input, ch);
-          });
-          frag.appendChild(b);
-        }
-        emojiGrid.appendChild(frag);
-      };
-
-      emojiBtn?.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        buildEmojiGridOnce();
-        const open = Boolean(popover && popover.hidden);
-        setEmojiPopoverOpen(open);
-        if (open) input?.focus();
-      });
-
-      const closeEmojiIfOutside = (ev) => {
-        if (!popover || popover.hidden) return;
-        const t = ev.target;
-        if (popover.contains(t)) return;
-        if (emojiBtn && (t === emojiBtn || emojiBtn.contains(t))) return;
-        setEmojiPopoverOpen(false);
-      };
-      document.addEventListener('mousedown', closeEmojiIfOutside);
-
-      const onEmojiEscape = (ev) => {
-        if (ev.key !== 'Escape' || !popover || popover.hidden) return;
-        if (!Controllers.chat._isOnChatPage()) return;
-        setEmojiPopoverOpen(false);
-      };
-      document.addEventListener('keydown', onEmojiEscape);
-      attachBtn?.addEventListener('click', () => fileInput?.click());
-      fileInput?.addEventListener('change', () => {
-        const f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        if (!f.type || !f.type.startsWith('image/')) {
-          ToastService.show('Selecione um arquivo de imagem.', 'danger');
-          fileInput.value = '';
-          return;
-        }
-        if (f.size > 1_000_000) {
-          ToastService.show('Imagem grande demais (máx. 1MB).', 'danger');
-          fileInput.value = '';
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          pendingImageDataUrl = String(reader.result || '');
-          renderPreview();
-        };
-        reader.readAsDataURL(f);
-      });
-
-      form?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (!input) return;
-        const val = input.value;
-        input.value = '';
-        const img = pendingImageDataUrl;
-        pendingImageDataUrl = '';
-        if (fileInput) fileInput.value = '';
-        renderPreview();
-        await this.send(val, img);
-      });
     },
   },
 
@@ -5354,7 +5022,6 @@ async function initApp() {
   Controllers.opFolders.init();
   Controllers.reports.init();
   Controllers.calendar.init();
-  Controllers.chat.init();
   Controllers.profileAvatar.init();
   Controllers.webhook.init();
   Controllers.notes.init();

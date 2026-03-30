@@ -1,0 +1,7 @@
+Arquivos .js nesta pasta (config.js, bootstrap.js, tasks.js, op-tasks.js, calendar-notes.js, _store.js)
+são para deploy em Vercel / Node, não para PHP na HostGator.
+
+No servidor compartilhado envie apenas os .php, .htaccess, SQL de apoio e credentials.php.
+
+Se esses .js forem enviados por engano, em geral não quebram o PHP — mas geram confusão.
+Remova-os do pacote de FTP se quiser manter só o necessário.

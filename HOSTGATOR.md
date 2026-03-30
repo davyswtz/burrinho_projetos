@@ -1,5 +1,7 @@
 # Deploy na HostGator — Burrinho Projetos
 
+**Lista de pastas/arquivos para FTP:** veja **`DEPLOY_HOSTGATOR.txt`** na raiz do projeto.
+
 Guia para publicar o painel com **PHP + MySQL** (cPanel), com dados compartilhados entre todos os usuários que acessam o mesmo site.
 
 ## 1. Banco de dados MySQL
@@ -34,33 +36,35 @@ Estrutura típica no **`public_html`** (ou subpasta do domínio):
 
 ```text
 public_html/
+├── .htaccess                  ← DirectoryIndex (veja raiz do repositório)
 ├── index.html
 ├── assets/
-│   └── sidebar-mascote-projetos.png   ← avatar circular na barra lateral
+│   ├── sidebar-mascote-projetos.png
+│   └── avatares/              ← nomes sem espaço (burrinho-cabecudo.png etc.)
 ├── src/
-│   ├── css/
-│   ├── data/
-│   │   ├── ipatinga_cto.json
-│   │   └── governadorvaladares_cto.json  (e outros JSON de CTO, se houver)
+│   ├── css/main.css
+│   ├── data/*.json
 │   └── js/
 │       ├── main.js
-│       ├── config.example.js
-│       └── config.js              ← opcional: cópia local (não commitar segredos)
+│       ├── config.js          ← quase sempre obrigório no deploy
+│       └── config.example.js
 └── api/
     ├── .htaccess
+    ├── credentials.php
     ├── db.php
-    ├── credentials.php      ← você criou (não vem no repositório)
-    ├── credentials.example.php
     ├── bootstrap.php
+    ├── login.php
+    ├── config.php
     ├── tasks.php
     ├── op_tasks.php
+    ├── op_task_image.php
     ├── calendar_notes.php
-    ├── config.php
-    └── schema.sql           ← opcional manter só como backup; não precisa expor
+    ├── op_desc_images.inc.php
+    └── migrations/            ← opcional
 ```
 
-- Não é obrigatório enviar **`api/migrations/`** para produção, mas não atrapalha.
-- Arquivos **`api/*.js`** (Vercel) e **`vercel.json`** podem ficar no FTP; a HostGator simplesmente os ignora se não forem chamados.
+- **Não envie** `api/*.js` (Vercel/Node): ver `api/NAO_SUBIR_NA_HOSTGATOR_NODE_VERCEL.txt`.
+- **`api/migrations/`** e `*.sql` são opcionais no FTP (úteis como backup).
 
 ## 4. PHP
 

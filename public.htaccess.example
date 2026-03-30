@@ -1,7 +1,8 @@
-# Renomeie para .htaccess na raiz do site (public_html) se precisar.
-# DirectoryIndex garante abertura do index.html ao acessar a pasta.
+# Conteúdo espelhado em `.htaccess` na raiz do repositório.
+# No servidor: coloque na raiz do site (public_html ou pasta do app).
 
 DirectoryIndex index.html index.php
+AddDefaultCharset utf-8
 
 # Opcional: forçar HTTPS (descomente após SSL ativo no cPanel)
 # RewriteEngine On

@@ -1,0 +1,45 @@
+══════════════════════════════════════════════════════════════════════════════
+BURRINHO PROJETOS — Deploy HostGator (organização de pastas)
+══════════════════════════════════════════════════════════════════════════════
+
+Monte no servidor EXATAMENTE esta árvore (relativa ao Document Root do domínio).
+Ex.: public_html → tudo abaixo dentro de public_html.
+     Se o painel ficar em public_html/burrinho/ → mesma árvore dentro de burrinho/.
+
+  .htaccess
+  index.html
+
+  assets/
+    sidebar-mascote-projetos.png
+    avatares/
+      burrinha-cruzeirense.png
+      burrinho-cabecudo.png
+      burrinho-dev.png
+      burrinho-empresario.jpg
+      burrinho-muted.png
+      burrinho-panguao.png
+
+  src/
+    css/main.css
+    js/config.js
+    js/main.js
+    data/*.json
+
+  api/
+    .htaccess
+    credentials.php            (copie de credentials.example.php)
+    db.php, bootstrap.php, login.php, config.php
+    tasks.php, op_tasks.php, op_task_image.php, calendar_notes.php, op_desc_images.inc.php
+
+Opcional no api/: migrations/, schema.sql (phpMyAdmin / backup).
+
+NÃO ENVIE (Vercel/Node): api/config.js, api/bootstrap.js, api/tasks.js, api/op-tasks.js,
+api/calendar-notes.js, api/_store.js, pasta lib/ se for só Vercel.
+
+Banco: importe api/schema.sql (ou migrations) no phpMyAdmin.
+
+Teste: https://SEUDOMINIO/.../api/bootstrap.php → JSON ok: true
+
+Se não estiver na raiz do domínio, em config.js: apiBaseUrl: 'https://dominio/pasta/api'
+
+══════════════════════════════════════════════════════════════════════════════

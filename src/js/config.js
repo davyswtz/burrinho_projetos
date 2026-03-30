@@ -1,5 +1,5 @@
 // Config local (não versionar com tokens reais, se possível).
-// Se este arquivo não existir, o app funciona com configurações do localStorage/servidor.
+// apiBaseUrl: em produzão costuma ser auto (mesmo host + pasta do app + /api). Defina manual se precisar.
 (function () {
   const prev = (typeof window !== 'undefined' && window.APP_CONFIG) ? window.APP_CONFIG : {};
 
@@ -42,6 +42,9 @@
       ],
       // CARATINGA: [ { name: '...', chatUserId: '...' } ],
     },
+
+    /** Base da API PHP (bootstrap, login, tarefas…). '' = auto na hospedagem; false = desliga API remota. */
+    apiBaseUrl: Object.prototype.hasOwnProperty.call(prev, 'apiBaseUrl') ? prev.apiBaseUrl : '',
   };
 })();
 

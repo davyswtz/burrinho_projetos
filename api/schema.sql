@@ -82,20 +82,6 @@ CREATE TABLE IF NOT EXISTS app_config (
   PRIMARY KEY (cfg_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── Chat geral (mensagens do sistema) ─────────────────────────────────────
-CREATE TABLE IF NOT EXISTS chat_message (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  username VARCHAR(120) NOT NULL,
-  display_name VARCHAR(120) NOT NULL DEFAULT '',
-  message TEXT NOT NULL,
-  image_mime VARCHAR(80) NOT NULL DEFAULT '',
-  image_data LONGBLOB NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_chat_created (created_at),
-  KEY idx_chat_user (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- ─── Usuários (login do painel) ─────────────────────────────────────────
 -- Senhas armazenadas como PBKDF2 (sha256) com salt por usuário.
 CREATE TABLE IF NOT EXISTS usuario (

@@ -1,3 +1,7 @@
+/**
+ * Rota serverless (ex.: Vercel) — NÃO é configuração do painel Burrinho.
+ * Para o chat e a API PHP na HostGator, use src/js/config.js (apiBaseUrl) e api/credentials.php.
+ */
 import { loadData, parseBody, saveData, sendJson } from '../lib/store.js';
 
 export default async function handler(req, res) {
