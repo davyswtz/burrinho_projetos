@@ -2418,14 +2418,26 @@ const UI = {
       const toggleParent = (e) => {
         const parentId = Number(e.currentTarget.dataset.toggleParent);
         if (e.target.closest('.atd-row-actions')) return;
-        this._atendimentoExpanded[parentId] = !(this._atendimentoExpanded[parentId] !== false);
-        this.renderAtendimentoList(normalized);
+        // Clique na setinha: expandir/contrair. Clique no restante da linha: editar.
+        if (e.target.closest('.atd-chevron')) {
+          this._atendimentoExpanded[parentId] = !(this._atendimentoExpanded[parentId] !== false);
+          this.renderAtendimentoList(normalized);
+          return;
+        }
+        Controllers.opTask.openEditModal(parentId);
       };
       btn.addEventListener('click', toggleParent);
       btn.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          toggleParent(e);
+          // Enter: editar (comportamento padrão de "abrir"). Espaço: expandir/contrair.
+          if (e.key === 'Enter') {
+            Controllers.opTask.openEditModal(Number(e.currentTarget.dataset.toggleParent));
+          } else {
+            const parentId = Number(e.currentTarget.dataset.toggleParent);
+            this._atendimentoExpanded[parentId] = !(this._atendimentoExpanded[parentId] !== false);
+            this.renderAtendimentoList(normalized);
+          }
         }
       });
     });
