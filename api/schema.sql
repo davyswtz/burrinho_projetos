@@ -102,7 +102,9 @@ INSERT INTO usuario (username, pass_salt, pass_hash, pass_iterations) VALUES
   ('danielaibipar', '53d858ff60f593d3bda7e4075b3386a3', '8a5fa588f839f73d1c4c84bac21b1cf2771bd6299f7f1bfdb3c8b83a329ff22d', 60000),
   ('marcosibipar', '44a7c0fcd4fe5864ce6a78d0d3a82d04', '3b260c64a81fadf7782f63e81653a5b76a3ff41b812dd4a1204af38624551ef2', 60000),
   ('jobertibipar', 'eeaafc242a2210ec94259cee2c6a37ac', 'f106e6808827dc47034e48e04ed29d2abc99e1593c8b55b06f570762b47e566e', 60000),
-  ('ederibipar', '4d21f7ce24bbb4267a5323cd1e48c60b', 'a60703a78acede2b2177a5f1d23856614dfe9704c7bed4612a67ef3a0e5e1467', 60000)
+  ('ederibipar', '4d21f7ce24bbb4267a5323cd1e48c60b', 'a60703a78acede2b2177a5f1d23856614dfe9704c7bed4612a67ef3a0e5e1467', 60000),
+  ('mauricioibipar', '9e4be252661f4bff94bc4eea3c41e022', '5131a3544c1faaa341baa1d9f270fed8bffac6b8f89cc4f8bfcbdf79edc3cb56', 60000),
+  ('joaopdr', '405730225804403437fc648d9b01af4c', '16c63a634ddc92a18c65f48dd7538228366d48de47ac1940d67094ef175592e1', 60000)
 ON DUPLICATE KEY UPDATE
   pass_salt = VALUES(pass_salt),
   pass_hash = VALUES(pass_hash),

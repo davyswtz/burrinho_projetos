@@ -84,6 +84,53 @@ function getSignedUserName() {
   }
 }
 
+/* ─────────────────────────────────────────────────────────────
+   THEME — modo claro/escuro (persistente)
+───────────────────────────────────────────────────────────── */
+const ThemeService = {
+  _key: 'planner.theme.v1',
+  _defaultTheme: 'dark',
+  _lightThemeColor: '#f6f8f6',
+  _darkThemeColor: '#0a0c0a',
+
+  _readSaved() {
+    try {
+      const raw = localStorage.getItem(this._key);
+      const t = String(raw || '').trim().toLowerCase();
+      return (t === 'light' || t === 'dark') ? t : '';
+    } catch {
+      return '';
+    }
+  },
+
+  _writeSaved(theme) {
+    try { localStorage.setItem(this._key, theme); } catch {}
+  },
+
+  _setMeta(name, content) {
+    const meta = document.querySelector(`meta[name="${name}"]`);
+    if (meta) meta.setAttribute('content', content);
+  },
+
+  apply(theme) {
+    const t = (theme === 'light' || theme === 'dark') ? theme : this._defaultTheme;
+    document.documentElement.dataset.theme = t;
+    this._setMeta('color-scheme', t);
+    this._setMeta('theme-color', t === 'light' ? this._lightThemeColor : this._darkThemeColor);
+  },
+
+  init() {
+    const saved = this._readSaved() || this._defaultTheme;
+    this.apply(saved);
+  },
+
+  set(theme) {
+    const t = (theme === 'light' || theme === 'dark') ? theme : this._defaultTheme;
+    this._writeSaved(t);
+    this.apply(t);
+  },
+};
+
 /**
  * Foto na barra lateral (circular). Por padrão usa o mascote do projeto em `assets/`.
  * Substitua por URL absoluta se preferir; vazio = só iniciais do usuário.
@@ -1558,6 +1605,8 @@ const OpTaskService = {
   getStatusCounts() {
     const counts = { Criada: 0, 'Em andamento': 0, Concluída: 0, Finalizada: 0, Backlog: 0 };
     Store.getOpTasks().forEach(t => {
+      // No "Atendimento ao Cliente", subtarefas não devem inflar contadores de tarefas.
+      if (t.categoria === 'atendimento-cliente' && t.parentTaskId) return;
       if (t.categoria === 'certificacao-cemig') {
         const s = t.status;
         if (s === 'Backlog' || s === 'Agendado') counts.Criada++;
@@ -1950,7 +1999,7 @@ const UI = {
     const allOpTasks = Store.getOpTasks();
     const rompimentosCount = allOpTasks.filter(t => t.categoria === 'rompimentos').length;
     const trocaPosteCount = allOpTasks.filter(t => t.categoria === 'troca-poste').length;
-    const atendimentoCount = allOpTasks.filter(t => t.categoria === 'atendimento-cliente').length;
+    const atendimentoCount = allOpTasks.filter(t => t.categoria === 'atendimento-cliente' && !t.parentTaskId).length;
     const otimizacaoCount = allOpTasks.filter(t => t.categoria === 'otimizacao-rede').length;
     const certCemigCount = allOpTasks.filter(t => t.categoria === 'certificacao-cemig').length;
     const tabRompimentos = document.getElementById('tab-count-rompimentos');
@@ -2101,12 +2150,17 @@ const UI = {
       `;
     }).join('');
 
-    // Eventos do kanban
-    board.querySelectorAll('.status-action-btn').forEach(btn => {
-      btn.addEventListener('click', e => {
+    // Eventos do kanban (delegados no container para não depender do re-render por card)
+    board.onclick = (e) => {
+      const target = e.target;
+      if (!target) return;
+
+      const statusBtn = target.closest?.('.status-action-btn');
+      if (statusBtn && board.contains(statusBtn)) {
+        e.preventDefault();
         e.stopPropagation();
-        const id       = +btn.dataset.opId;
-        const toStatus = btn.dataset.toStatus;
+        const id = +statusBtn.dataset.opId;
+        const toStatus = statusBtn.dataset.toStatus;
         this._lastMovedOpTask = { id, status: toStatus };
         OpTaskService.changeStatus(id, toStatus);
         this.renderOpPage();
@@ -2114,21 +2168,21 @@ const UI = {
         UI.renderCalendarPage();
         UI.renderReportsPage();
         ToastService.show(`Tarefa movida para "${toStatus}"`, 'success');
-      });
-    });
+        return;
+      }
 
-    board.querySelectorAll('.kanban-card').forEach(card => {
-      card.addEventListener('click', e => {
-        const subtaskBtn = e.target.closest('[data-open-subtask]');
-        if (subtaskBtn) {
-          Controllers.opTask.openEditModal(+subtaskBtn.dataset.openSubtask);
-          return;
-        }
-        if (e.target.closest('.status-action-btn')) return;
-        const id = +card.dataset.opId;
-        Controllers.opTask.openEditModal(id);
-      });
-    });
+      const subtaskBtn = target.closest?.('[data-open-subtask]');
+      if (subtaskBtn && board.contains(subtaskBtn)) {
+        e.preventDefault();
+        Controllers.opTask.openEditModal(+subtaskBtn.dataset.openSubtask);
+        return;
+      }
+
+      const card = target.closest?.('.kanban-card');
+      if (!card || !board.contains(card)) return;
+      const id = +card.dataset.opId;
+      Controllers.opTask.openEditModal(id);
+    };
 
     // Drag and drop no Kanban (mantendo a opcao de clique)
     let draggedId = null;
@@ -2891,6 +2945,17 @@ const CtoLocationRegistry = (() => {
    CONTROLLERS — Lógica de interação do usuário
 ───────────────────────────────────────────────────────────── */
 const Controllers = {
+  theme: {
+    init() {
+      ThemeService.init();
+      const toggle = document.getElementById('themeLightToggle');
+      if (!toggle) return;
+      toggle.checked = document.documentElement.dataset.theme === 'light';
+      toggle.addEventListener('change', () => {
+        ThemeService.set(toggle.checked ? 'light' : 'dark');
+      });
+    },
+  },
   auth: {
     _sessionKey: 'planner.session.v1',
     _displayNameKey: 'planner.session.displayName.v1',
@@ -3723,7 +3788,10 @@ const Controllers = {
         'certificacao-cemig': 'CEM',
       };
       const prefix = prefixMap[category] || 'ROM';
-      const count = Store.getOpTasks().filter(t => t.categoria === category).length + 1;
+      const count = Store.getOpTasks()
+        .filter(t => t.categoria === category)
+        .filter(t => !(category === 'atendimento-cliente' && t.parentTaskId))
+        .length + 1;
       const regionPrefix = this._regionTaskPrefix(regionRaw);
       const base = `${prefix}-${String(count).padStart(4, '0')}`;
       return regionPrefix ? `${regionPrefix}-${base}` : base;
@@ -4839,6 +4907,7 @@ const Controllers = {
    APP INIT — Bootstrap da aplicação
 ───────────────────────────────────────────────────────────── */
 async function initApp() {
+  Controllers.theme.init();
   CtoLocationRegistry.load().catch(() => {});
   Controllers.auth.init();
 

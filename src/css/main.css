@@ -65,6 +65,37 @@
   --touch-min:    44px;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   TEMA — modo claro (override de tokens)
+═══════════════════════════════════════════════════════════ */
+html[data-theme="light"] {
+  color-scheme: light;
+  scrollbar-color: rgba(10,12,10,.22) transparent;
+}
+html[data-theme="light"] body {
+  background: var(--black);
+  color: var(--white);
+}
+html[data-theme="light"] {
+  --black:       #f6f8f6;
+  --black2:      #eef2ee;
+  --black3:      #e6ece6;
+  --black4:      #dde5dd;
+  --black5:      #d2dcd2;
+
+  --white:       #0a0c0a;
+  --white2:      #111411;
+  --white3:      #1f261f;
+  --white4:      #435343;
+
+  --border:      rgba(10,12,10,.10);
+  --border2:     rgba(10,12,10,.18);
+  --border3:     rgba(10,12,10,.28);
+
+  --green-muted: rgba(45,255,110,.16);
+  --green-glow:  rgba(45,255,110,.22);
+}
+
 /* ═══ RESET ═══════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 img, video {
