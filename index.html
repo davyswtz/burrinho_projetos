@@ -70,8 +70,8 @@
   <aside class="sidebar" id="sidebar" role="navigation" aria-label="Menu principal">
 
     <div class="sidebar-top">
-      <div class="logo" aria-label="Planner Burrinho">
-        <span class="logo-text">Planner Burrinho</span>
+      <div class="logo" aria-label="Planner Telecom">
+        <span class="logo-text">Planner Telecom</span>
       </div>
       <button class="collapse-btn" id="collapseBtn" title="Recolher menu" aria-label="Recolher menu">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -312,24 +312,13 @@
             </div>
           </div>
 
-          <!-- Painéis laterais -->
+          <!-- Painel lateral: agenda da semana -->
           <div class="side-stack">
             <div class="panel" role="region" aria-label="Agenda da semana">
               <div class="panel-header">
                 <span class="panel-title">Agenda da Semana</span>
               </div>
               <ul class="agenda-list" id="agendaList" aria-label="Eventos da semana"></ul>
-            </div>
-            <div class="panel" role="region" aria-label="Notas rápidas">
-              <div class="panel-header">
-                <span class="panel-title">Notas rápidas</span>
-              </div>
-              <div class="note-area">
-                <textarea class="note-textarea" id="noteTextarea" aria-label="Campo de notas" placeholder="Anote lembretes, prioridades ou observações do setor…"></textarea>
-                <div class="note-actions">
-                  <button class="sm-btn" id="saveNoteBtn">Salvar nota</button>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -747,6 +736,12 @@
       </div>
       <input type="hidden" id="op-parent-task-id" value=""/>
 
+      <!-- Lista compacta de ordens de serviço já vinculadas ao protocolo (quando houver pai) -->
+      <div class="form-group" id="opAtdChildrenWrap" style="display:none">
+        <label>Ordens de serviço vinculadas</label>
+        <ul id="opAtdChildrenList" class="atd-modal-children-list" aria-label="Ordens de serviço desse protocolo"></ul>
+      </div>
+
       <!-- Otimização de Rede — campos dedicados -->
       <div id="opOtimRedeWrap" class="op-otim-rede-wrap" style="display:none">
         <div class="form-row">
@@ -908,6 +903,21 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
         Salvar tarefa
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- Picker compacto de status para subtarefas de atendimento -->
+<div class="status-picker-overlay" id="opAtdStatusPickerOverlay" aria-hidden="true">
+  <div class="status-picker" role="dialog" aria-modal="true" aria-labelledby="opAtdStatusPickerTitle">
+    <div class="status-picker-head">
+      <span class="status-picker-title" id="opAtdStatusPickerTitle">Status da ordem</span>
+      <button type="button" class="status-picker-close" id="opAtdStatusPickerClose" aria-label="Fechar seleção de status">×</button>
+    </div>
+    <div class="status-picker-body">
+      <button type="button" class="status-pill" data-status="Backlog">Backlog</button>
+      <button type="button" class="status-pill" data-status="Em andamento">Em andamento</button>
+      <button type="button" class="status-pill" data-status="Concluída">Concluída</button>
     </div>
   </div>
 </div>

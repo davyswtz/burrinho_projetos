@@ -772,6 +772,14 @@ const Utils = {
       .replaceAll("'", '&#039;');
   },
 
+  /** Corta texto para caber em células pequenas do calendário. */
+  truncateForCalendar(label, maxLen = 26) {
+    const str = String(label ?? '').trim();
+    if (!str) return '';
+    if (str.length <= maxLen) return str;
+    return `${str.slice(0, maxLen - 1)}…`;
+  },
+
   /** Tempo relativo curto para mensagens do chat (tooltip: formatChatFullDateTime). */
   formatChatRelative(iso) {
     if (!iso) return '';
@@ -2538,6 +2546,9 @@ const UI = {
     const days = CalendarService.getMonthMatrix(monthDate);
 
     grid.innerHTML = days.map(day => {
+      const items = CalendarService.getItemsByDate(day.iso);
+      const preview = items.slice(0, 3);
+      const moreCount = items.length - preview.length;
       const meta = CalendarService.getDayMeta(day.iso);
       const dotHtml = [
         meta.dashboard ? `<span class="calendar-dot dashboard" title="Tarefas do Dashboard"></span>` : '',
@@ -2549,6 +2560,15 @@ const UI = {
         <button class="calendar-day ${day.isCurrentMonth ? '' : 'outside'} ${day.iso === today ? 'today' : ''} ${day.iso === selected ? 'selected' : ''}" data-date="${day.iso}" role="gridcell" aria-label="Dia ${day.day}, ${day.month + 1}/${day.year}">
           <span class="calendar-day-number">${day.day}</span>
           <span class="calendar-dot-list">${dotHtml}</span>
+          <div class="calendar-day-items">
+            ${preview.map(it => `
+              <div class="calendar-day-item-pill ${it.source === 'note' ? 'note' : 'task'}" title="${Utils.escapeHtml(it.title || '')}">
+                <span class="calendar-day-item-dot ${it.source === 'note' ? 'note' : (it.source === 'dashboard' ? 'dashboard' : 'operacional')}"></span>
+                <span class="calendar-day-item-text">${Utils.escapeHtml(Utils.truncateForCalendar(it.title || ''))}</span>
+              </div>
+            `).join('')}
+            ${moreCount > 0 ? `<div class="calendar-day-more">+${moreCount}</div>` : ''}
+          </div>
           <span class="calendar-day-count">${meta.total ? `${meta.total} item(ns)` : ''}</span>
         </button>
       `;
@@ -2952,7 +2972,12 @@ const UI = {
       card.addEventListener('click', (ev) => {
         if (ev.target === btnNovo || ev.target.closest('.atd-book-ico') === btnNovo) {
           ev.stopPropagation();
-          Controllers.opTask.openNewAtendimentoChild?.(parent);
+          Controllers.opTask.openNewModal?.({
+            category: 'atendimento-cliente',
+            parentTaskId: parent.id,
+            isParentTask: false,
+            status: 'Backlog',
+          });
           return;
         }
         Controllers.opTask.openEditModal(parent.id);
@@ -4254,6 +4279,64 @@ const Controllers = {
       else if (this._newTaskPreset?.parentTaskId) hidden.value = String(this._newTaskPreset.parentTaskId);
       else hidden.value = '';
     },
+    _refreshAtdChildrenList() {
+      const childrenWrap = document.getElementById('opAtdChildrenWrap');
+      const childrenList = document.getElementById('opAtdChildrenList');
+      if (!childrenWrap || !childrenList) return;
+
+      const category = this._newTaskPreset?.category || Store.currentOpCategory;
+      const parentHidden = document.getElementById('op-parent-task-id');
+      const parentIdRaw = parentHidden?.value || '';
+      const parentId = parentIdRaw ? Number(parentIdRaw) : null;
+
+      const isAtdChild = this._isAtendimentoCategory(category) && !!parentId;
+      if (!isAtdChild) {
+        childrenWrap.style.display = 'none';
+        childrenList.innerHTML = '';
+        return;
+      }
+
+      const all = Store.getOpTasks()
+        .filter(t => t.categoria === 'atendimento-cliente' && Number(t.parentTaskId) === parentId);
+      if (!all.length) {
+        childrenList.innerHTML = '<li><span class="atd-modal-children-meta">Nenhuma ordem de serviço vinculada ainda.</span></li>';
+      } else {
+        childrenList.innerHTML = all.map((t) => {
+          const title = Utils.escapeHtml(t.titulo || t.ordemServico || '(sem título)');
+          const who = Utils.escapeHtml(t.responsavel || '—');
+          const prazo = t.prazo ? Utils.formatDate(t.prazo) : 'sem prazo';
+          const status = Utils.escapeHtml(t.status || 'Pendente');
+          const isDone = ['Concluída', 'Finalizada', 'Finalizado'].includes(t.status);
+          return `
+            <li class="${isDone ? 'done' : ''}">
+              <label class="atd-modal-children-check">
+                <input type="checkbox" data-child-id="${t.id}" ${isDone ? 'checked' : ''} />
+              </label>
+              <div class="atd-modal-children-main">
+                <span class="atd-modal-children-title">${title}</span>
+                <span class="atd-modal-children-meta">${who} · ${prazo}</span>
+              </div>
+              <span class="atd-modal-children-status">${status}</span>
+            </li>
+          `;
+        }).join('');
+      }
+      childrenWrap.style.display = '';
+
+      if (!childrenList.dataset.boundStatusClick) {
+        childrenList.addEventListener('click', (e) => {
+          const input = e.target.closest('.atd-modal-children-check input[type=checkbox]');
+          if (!input) return;
+          const id = Number(input.dataset.childId || 0);
+          if (!id) return;
+          const pickerOverlay = document.getElementById('opAtdStatusPickerOverlay');
+          if (!pickerOverlay) return;
+          pickerOverlay.dataset.childId = String(id);
+          pickerOverlay.setAttribute('aria-hidden', 'false');
+        });
+        childrenList.dataset.boundStatusClick = '1';
+      }
+    },
     _regionTaskPrefix(regionRaw = '') {
       const norm = WebhookService._normalizeRegionKey(regionRaw);
       if (norm === 'GOVAL') return 'GV';
@@ -4353,6 +4436,7 @@ const Controllers = {
         const parent = Store.findOpTask(Number(preset.parentTaskId));
         if (parent?.regiao) document.getElementById('op-regiao').value = parent.regiao;
       }
+      this._refreshAtdChildrenList();
       this._syncParentHidden(null);
       this._syncCategorySpecificFields(category);
       this._newTaskPreset = { ...preset };
@@ -4534,7 +4618,11 @@ const Controllers = {
     openNewModal(preset = {}) {
       Store.editingOpTaskId = null;
       if (preset.category && Store.currentPage === 'tarefas') Store.currentOpCategory = preset.category;
-      document.getElementById('opTaskModalTitle').textContent = 'Nova tarefa';
+      document.getElementById('opTaskModalTitle').textContent = (
+        this._isAtendimentoCategory(preset.category) && preset.parentTaskId
+      )
+        ? 'Nova ordem de serviço'
+        : 'Nova tarefa';
       const deleteBtn = document.getElementById('deleteOpTaskBtn');
       if (deleteBtn) deleteBtn.style.display = 'none';
       this._clearForm(preset);
@@ -4751,7 +4839,22 @@ const Controllers = {
       // Atualiza categoria ativa para a que foi salva (aba Tarefas)
       if (Store.currentPage === 'tarefas') Store.currentOpCategory = data.categoria;
 
-      ModalService.close('opTaskModal');
+      const isAtdChild =
+        data.categoria === 'atendimento-cliente' &&
+        !!data.parentTaskId &&
+        !Store.editingOpTaskId;
+
+      if (isAtdChild) {
+        // Mantém modal aberto para cadastrar várias OS na sequência.
+        this.openNewModal({
+          category: 'atendimento-cliente',
+          parentTaskId: data.parentTaskId,
+          status: 'Backlog',
+        });
+      } else {
+        ModalService.close('opTaskModal');
+      }
+
       UI.refreshOperationalUi();
       UI.renderCalendarPage();
       UI.renderReportsPage();
@@ -4812,6 +4915,33 @@ const Controllers = {
         this.openNewModal({ kind: 'parent', category: 'atendimento-cliente', status: 'Backlog' });
       });
       document.getElementById('saveOpTaskBtn').addEventListener('click', () => this.save());
+
+      // Picker de status para subtarefas de atendimento.
+      const pickerOverlay = document.getElementById('opAtdStatusPickerOverlay');
+      const pickerClose = document.getElementById('opAtdStatusPickerClose');
+      if (pickerOverlay && pickerClose) {
+        const closePicker = () => {
+          pickerOverlay.setAttribute('aria-hidden', 'true');
+          delete pickerOverlay.dataset.childId;
+        };
+        pickerClose.addEventListener('click', closePicker);
+        pickerOverlay.addEventListener('click', (e) => {
+          if (e.target === pickerOverlay) closePicker();
+        });
+        pickerOverlay.querySelectorAll('.status-pill').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = Number(pickerOverlay.dataset.childId || 0);
+            if (!id) return;
+            const nextStatus = btn.dataset.status;
+            if (!nextStatus) return;
+            OpTaskService.changeStatus(id, nextStatus);
+            this._refreshAtdChildrenList();
+            UI.renderCalendarPage();
+            UI.refreshOperationalUi();
+            closePicker();
+          });
+        });
+      }
       document.getElementById('deleteOpTaskBtn')?.addEventListener('click', () => this.deleteTask());
       // Segurança: se alguém abrir modal de subtarefa sem pai, limpa o hidden.
       document.getElementById('op-parent-task-id')?.addEventListener('input', () => this._syncAtendimentoKindFields());
@@ -5361,17 +5491,10 @@ const Controllers = {
     },
   },
 
-  /* ── Notes ────────────────────────────────────────────── */
+  /* ── Notes (removido) ─────────────────────────────────── */
   notes: {
     init() {
-      const textarea = document.getElementById('noteTextarea');
-      textarea.value = Store.getPlannerConfig().note;
-      document.getElementById('saveNoteBtn').addEventListener('click', () => {
-        const val = textarea.value.trim();
-        if (!val) { ToastService.show('Escreva algo antes de salvar', 'danger'); return; }
-        Store.setPlannerConfig({ note: val });
-        ToastService.show('Nota salva', 'success');
-      });
+      // Bloco de "Notas rápidas" do dashboard foi removido.
     },
   },
 
