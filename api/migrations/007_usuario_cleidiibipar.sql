@@ -1,4 +1,5 @@
--- Usuário cleidiibipar, senha: 2523
+-- Usuário cleidiibipar
+-- Obs: não colocar senha em texto no repositório.
 -- PBKDF2-SHA256, 60000 iterações (igual login.php / schema.sql).
 -- Execute no phpMyAdmin ou: mysql -u USUARIO -p BANCO < api/migrations/007_usuario_cleidiibipar.sql
 

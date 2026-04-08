@@ -442,8 +442,8 @@
             <div class="panel-title">
               Atendimento ao Cliente
               <span class="atd-toolbar-hint">
-                Organize protocolos em listas (tarefas-pai) e distribua ordens de serviço como subtarefas por técnico.
-                Arraste cartões entre prateleiras para atualizar o status.
+                Quadro no mesmo estilo das Tarefas operacionais: colunas Criada → Em andamento → Concluída → Finalizada.
+                Use os botões do cartão ou arraste o protocolo para mudar o status da lista.
               </span>
             </div>
             <div class="atd-toolbar-right">
@@ -484,7 +484,7 @@
             </div>
           </div>
 
-          <div class="atd-shelves" id="atendimentoBoard" role="region" aria-label="Prateleiras de atendimento ao cliente">
+          <div class="kanban-board atd-kanban-board" id="atendimentoBoard" role="region" aria-label="Quadro kanban de atendimento ao cliente">
             <!-- conteúdo gerado via JS (UI.renderAtendimentoPage) -->
           </div>
         </div>
@@ -690,7 +690,12 @@
 <div class="modal-overlay" id="opTaskModal" role="dialog" aria-modal="true" aria-labelledby="opTaskModalTitle">
   <div class="modal">
     <div class="modal-head">
-      <span class="modal-title" id="opTaskModalTitle">Nova tarefa</span>
+      <div class="modal-head-main">
+        <span class="modal-title" id="opTaskModalTitle">Nova tarefa</span>
+        <button type="button" class="task-copy-id-btn op-task-modal-copy-id" id="opTaskModalCopyIdBtn" hidden title="Copiar protocolo / código da tarefa" aria-label="Copiar protocolo da tarefa">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </div>
       <button class="close-btn" id="closeOpTaskModal" aria-label="Fechar modal">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -712,6 +717,73 @@
           <div class="hint" id="op-address-hint" style="margin-top:6px">Aguardando CTO ou coordenadas.</div>
         </div>
       </div>
+      <input type="hidden" id="op-parent-task-id" value=""/>
+
+      <!-- Ordens vinculadas (subtarefas) + formulário atendimento no topo do modal -->
+      <div class="form-group" id="opAtdChildrenWrap" style="display:none">
+        <div class="atd-modal-children-header">
+          <label>Ordens de serviço vinculadas</label>
+          <button type="button" class="atd-modal-children-expand-btn" id="opAtdChildrenExpandBtn" aria-expanded="false" aria-controls="opAtdChildrenList" title="Expandir lista" aria-label="Expandir lista de ordens de serviço vinculadas">
+            <svg class="atd-expand-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            <svg class="atd-collapse-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="10" y1="14" x2="3" y2="21"/></svg>
+          </button>
+        </div>
+        <ul id="opAtdChildrenList" class="atd-modal-children-list" aria-label="Ordens de serviço desse protocolo"></ul>
+      </div>
+
+      <!-- Atendimento ao cliente (lista pai): ordem — nome → protocolo → datas → subprocesso → prioridade → região → técnico -->
+      <div id="opAtdParentOnlyWrap" style="display:none" class="op-atd-form-block">
+        <div class="form-group">
+          <label for="op-atd-nome-cliente">Nome do cliente</label>
+          <input type="text" id="op-atd-nome-cliente" placeholder="Opcional" autocomplete="off"/>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="op-atd-protocolo">Protocolo</label>
+            <input type="text" id="op-atd-protocolo" placeholder="Opcional" autocomplete="off"/>
+          </div>
+          <div class="form-group">
+            <label for="op-atd-data-entrada">Data de entrada</label>
+            <input type="date" id="op-atd-data-entrada"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="op-atd-data-instalacao">Data de saída</label>
+            <input type="date" id="op-atd-data-instalacao"/>
+          </div>
+          <div class="form-group">
+            <label for="op-atd-subprocesso">Subprocesso</label>
+            <input type="text" id="op-atd-subprocesso" placeholder="Opcional" autocomplete="off"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" id="opAtdPrioridadeSlot"></div>
+          <div class="form-group" id="opAtdRegiaoSlot"></div>
+        </div>
+        <div class="form-group" id="opAtdParentTecnicoSlot"></div>
+      </div>
+
+      <!-- Atendimento (ordem de serviço / filha): nome → OS + região → técnico → descrição -->
+      <div id="opAtdChildOnlyWrap" style="display:none" class="op-atd-form-block">
+        <div class="form-group">
+          <label for="op-atd-child-titulo">Nome da tarefa</label>
+          <input type="text" id="op-atd-child-titulo" placeholder="Opcional" autocomplete="off"/>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="op-atd-ordem-servico">Ordem de serviço</label>
+            <input type="text" id="op-atd-ordem-servico" placeholder="Opcional" autocomplete="off"/>
+          </div>
+          <div class="form-group" id="opAtdChildRegiaoSlot"></div>
+        </div>
+        <div class="form-group" id="opAtdChildTecnicoSlot"></div>
+        <div class="form-group op-atd-descricao-block">
+          <label for="op-atd-descricao">Descrição da tarefa</label>
+          <textarea id="op-atd-descricao" placeholder="Detalhes, observações, pendências… (opcional)" style="min-height:120px;resize:vertical"></textarea>
+        </div>
+      </div>
+
       <div class="form-group" id="opTituloGroup">
         <label for="op-titulo">Nome da tarefa</label>
         <input type="text" id="op-titulo" placeholder="Descreva a tarefa" autocomplete="off"/>
@@ -733,13 +805,6 @@
           <label for="op-clientes-afetados">Quantidade de clientes afetados</label>
           <input type="number" id="op-clientes-afetados" min="1" step="1" placeholder="Ex.: 120" autocomplete="off"/>
         </div>
-      </div>
-      <input type="hidden" id="op-parent-task-id" value=""/>
-
-      <!-- Lista compacta de ordens de serviço já vinculadas ao protocolo (quando houver pai) -->
-      <div class="form-group" id="opAtdChildrenWrap" style="display:none">
-        <label>Ordens de serviço vinculadas</label>
-        <ul id="opAtdChildrenList" class="atd-modal-children-list" aria-label="Ordens de serviço desse protocolo"></ul>
       </div>
 
       <!-- Otimização de Rede — campos dedicados -->
@@ -821,64 +886,11 @@
         </div>
       </div>
 
-      <!-- Atendimento ao Cliente (Tarefa Pai) — mostra só o essencial -->
-      <div id="opAtdParentOnlyWrap" style="display:none">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="op-atd-protocolo">Protocolo</label>
-            <input type="text" id="op-atd-protocolo" placeholder="Ex.: 2026-000123" autocomplete="off"/>
-          </div>
-          <div class="form-group">
-            <label for="op-atd-data-entrada">Data de Entrada</label>
-            <input type="date" id="op-atd-data-entrada"/>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="op-atd-subprocesso">SubProcesso</label>
-            <input type="text" id="op-atd-subprocesso" placeholder="Ex.: Vistoria / Reparo / Retorno" autocomplete="off"/>
-          </div>
-          <div class="form-group">
-            <label for="op-atd-data-instalacao">Data da Instalação</label>
-            <input type="date" id="op-atd-data-instalacao"/>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group" id="opAtdPrioridadeSlot">
-            <!-- Prioridade será reposicionada aqui automaticamente -->
-          </div>
-          <div class="form-group" id="opAtdRegiaoSlot">
-            <!-- Região será reposicionada aqui automaticamente -->
-          </div>
-        </div>
-      </div>
-
-      <!-- Atendimento ao Cliente (Tarefa Filha) — mostra só o essencial -->
-      <div id="opAtdChildOnlyWrap" style="display:none">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="op-atd-ordem-servico">Ordem de serviço</label>
-            <input type="text" id="op-atd-ordem-servico" placeholder="Ex.: OS-000123" autocomplete="off"/>
-          </div>
-          <div class="form-group" id="opAtdChildTecnicoSlot">
-            <!-- Técnico responsável será reposicionado aqui automaticamente -->
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group" id="opAtdChildRegiaoSlot">
-            <!-- Região será reposicionada aqui automaticamente -->
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="op-atd-descricao">Descrição da tarefa</label>
-          <textarea id="op-atd-descricao" placeholder="Detalhes do atendimento..." style="min-height:92px;resize:vertical"></textarea>
-        </div>
-      </div>
-
       <div class="form-row" id="opPriorityRegionRow">
         <div class="form-group" id="opPrioridadeGroup">
           <label for="op-prioridade">Prioridade</label>
           <select id="op-prioridade">
+            <option value="">—</option>
             <option value="Alta">Alta</option>
             <option value="Média">Média</option>
             <option value="Baixa">Baixa</option>
@@ -907,18 +919,12 @@
   </div>
 </div>
 
-<!-- Picker compacto de status para subtarefas de atendimento -->
-<div class="status-picker-overlay" id="opAtdStatusPickerOverlay" aria-hidden="true">
-  <div class="status-picker" role="dialog" aria-modal="true" aria-labelledby="opAtdStatusPickerTitle">
-    <div class="status-picker-head">
-      <span class="status-picker-title" id="opAtdStatusPickerTitle">Status da ordem</span>
-      <button type="button" class="status-picker-close" id="opAtdStatusPickerClose" aria-label="Fechar seleção de status">×</button>
-    </div>
-    <div class="status-picker-body">
-      <button type="button" class="status-pill" data-status="Backlog">Backlog</button>
-      <button type="button" class="status-pill" data-status="Em andamento">Em andamento</button>
-      <button type="button" class="status-pill" data-status="Concluída">Concluída</button>
-    </div>
+<!-- Dropdown de status (lista de ordens vinculadas no modal de atendimento) -->
+<div class="atd-status-dropdown" id="opAtdStatusDropdown" hidden>
+  <div class="atd-status-dropdown-panel" role="menu" aria-label="Alterar status da ordem">
+    <button type="button" class="atd-status-dropdown-item" role="menuitem" data-status="Backlog">Backlog</button>
+    <button type="button" class="atd-status-dropdown-item" role="menuitem" data-status="Em andamento">Em andamento</button>
+    <button type="button" class="atd-status-dropdown-item" role="menuitem" data-status="Concluída">Concluída</button>
   </div>
 </div>
 

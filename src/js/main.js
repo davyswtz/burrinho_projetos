@@ -15,7 +15,7 @@
 
 /**
  * Modelo de tarefa operacional (Rompimentos / Troca de Poste)
- * @typedef {{ id: number, titulo: string, responsavel: string, responsavelChatId?: string, categoria: string, prazo: string, prioridade: string, descricao: string, status: OpStatus, historico: HistoryEntry[], criadaEm: string, assinadaPor?: string, assinadaEm?: string, protocolo?: string, dataEntrada?: string, subProcesso?: string, dataInstalacao?: string, ordemServico?: string }} OpTask
+ * @typedef {{ id: number, titulo: string, responsavel: string, responsavelChatId?: string, categoria: string, prazo: string, prioridade: string, descricao: string, status: OpStatus, historico: HistoryEntry[], criadaEm: string, assinadaPor?: string, assinadaEm?: string, protocolo?: string, dataEntrada?: string, subProcesso?: string, dataInstalacao?: string, ordemServico?: string, nomeCliente?: string }} OpTask
  * @typedef {'Criada'|'Backlog'|'A iniciar'|'Em andamento'|'Concluída'|'Finalizada'|'Cancelada'|'Agendado'|'Validação'|'Envio pendente'|'Necessário adequação'|'Finalizado'} OpStatus
  * @typedef {{ status: OpStatus, timestamp: string, autor: string }} HistoryEntry
  */
@@ -253,7 +253,9 @@ const Store = (() => {
       return Boolean(this.baseUrl);
     },
     async request(path, options = {}) {
-      if (!this.enabled()) return null;
+      if (!this.enabled()) {
+        return { ok: false, error: 'api_disabled' };
+      }
       try {
         const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 15000;
         const { timeoutMs: _omitTimeout, headers: optHeaders, ...rest } = options;
@@ -281,24 +283,24 @@ const Store = (() => {
         clearTimeout(kill);
         const rawText = await response.text();
         const text = rawText.replace(/^\uFEFF/, '').trim();
-        if (!text) return null;
+        if (!text) return { ok: false, error: 'empty_response', status: response.status };
         const head = text.slice(0, 24).toLowerCase();
         if (head.startsWith('<!') || head.startsWith('<?') || head.startsWith('<htm') || head.startsWith('<html')) {
-          return null;
+          return { ok: false, error: 'html_response', status: response.status };
         }
         let parsed = null;
         try {
           parsed = JSON.parse(text);
         } catch {
-          return null;
+          return { ok: false, error: 'invalid_json', status: response.status };
         }
         if (!response.ok) {
           if (parsed && typeof parsed === 'object' && 'ok' in parsed) return parsed;
-          return null;
+          return { ok: false, error: 'http_error', status: response.status };
         }
         return parsed;
       } catch {
-        return null;
+        return { ok: false, error: 'network_error' };
       }
     },
     async requestAny(paths, options = {}) {
@@ -480,6 +482,9 @@ const Store = (() => {
   let teamChatRosterKeys = [];
 
   return {
+    // API (cliente HTTP compartilhado pelo app)
+    ApiService,
+
     // Tasks
     getTasks:        ()      => [...tasks],
     addTask:         (data)  => {
@@ -613,6 +618,19 @@ const Store = (() => {
     },
     bootstrapFromRemote: async () => {
       const payload = await ApiService.getBootstrap();
+      if (payload && typeof payload === 'object' && payload.ok === false && payload.error === 'unauthorized') {
+        // O usuário pode estar "logado" só no localStorage, mas sem sessão no PHP.
+        // Nesse caso, força relogar para reestabelecer $_SESSION['planner_user'].
+        try {
+          if (typeof Controllers !== 'undefined' && Controllers?.auth?._isAuthenticated?.()) {
+            ToastService.show('Sessão do servidor expirada. Faça login novamente.', 'warning');
+            Controllers.auth.logout();
+          }
+        } catch {
+          /* ignore */
+        }
+        return false;
+      }
       if (!payload || !payload.ok) return false;
 
       // Preserva metadados locais que não existem no servidor (ex.: threadKey do Google Chat).
@@ -918,6 +936,107 @@ const Utils = {
       this._avatarMap[name] = this._avatarColors[Object.keys(this._avatarMap).length % this._avatarColors.length];
     }
     return this._avatarMap[name];
+  },
+
+  /** Ícone “copiar” (duas folhas) — copia código/protocolo da tarefa, não o ID numérico do banco. */
+  TASK_COPY_ID_SVG:
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
+
+  escapeHtmlAttr(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;');
+  },
+
+  _opTaskRegionPrefix(regionRaw = '') {
+    const norm = WebhookService._normalizeRegionKey(regionRaw);
+    if (norm === 'GOVAL') return 'GV';
+    if (norm === 'VALE_DO_ACO') return 'VL';
+    if (norm === 'CARATINGA') return 'CA';
+    return '';
+  },
+
+  /** Código sintético ROM-/ATD-/… quando ainda não há taskCode (mesma regra do modal). */
+  syntheticOpTaskCode(task) {
+    if (!task || typeof task !== 'object') return '';
+    const prefixMap = {
+      'rompimentos': 'ROM',
+      'troca-poste': 'POS',
+      'atendimento-cliente': 'ATD',
+      'otimizacao-rede': 'NET',
+      'certificacao-cemig': 'CEM',
+    };
+    const prefix = prefixMap[task.categoria] || 'ROM';
+    const regionPrefix = this._opTaskRegionPrefix(task.regiao);
+    const id = Number(task.id);
+    if (!Number.isFinite(id) || id <= 0) return '';
+    const base = `${prefix}-${String(id).padStart(4, '0')}`;
+    return regionPrefix ? `${regionPrefix}-${base}` : base;
+  },
+
+  /**
+   * Texto a copiar para tarefa operacional: protocolo do formulário, senão taskCode, senão código sintético.
+   * Alinhado ao que a UI mostra (ex.: linha PROTOCOLO nos cards de atendimento).
+   */
+  opTaskDisplayRef(task) {
+    if (!task || typeof task !== 'object') return '';
+    const proto = String(task.protocolo || '').trim();
+    const code = String(task.taskCode || '').trim();
+    if (proto) return proto;
+    if (code) return code;
+    if (task.categoria) return this.syntheticOpTaskCode(task);
+    return '';
+  },
+
+  /** Tarefa na visão unificada (dashboard + operacional): só operacional tem protocolo/código copiável aqui. */
+  unifiedTaskDisplayRef(task) {
+    if (!task || typeof task !== 'object') return '';
+    if (task.source === 'operacional' || task.categoria) return this.opTaskDisplayRef(task);
+    return '';
+  },
+
+  taskCopyProtocolButtonHtml(displayRef, extraClass = '') {
+    const code = String(displayRef ?? '').trim();
+    if (!code) return '';
+    const cls = ['task-copy-id-btn', extraClass].filter(Boolean).join(' ');
+    const a = this.escapeHtmlAttr(code);
+    return `<button type="button" class="${cls}" draggable="false" data-copy-protocol="${a}" title="Copiar protocolo (${code})" aria-label="Copiar protocolo ${code}">${this.TASK_COPY_ID_SVG}</button>`;
+  },
+
+  async copyTextToClipboard(text) {
+    const s = String(text ?? '').trim();
+    if (!s) return false;
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(s);
+        return true;
+      }
+    } catch {
+      /* fallback */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = s;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async copyProtocolWithToast(text) {
+    const s = String(text ?? '').trim();
+    if (!s) return;
+    const ok = await this.copyTextToClipboard(s);
+    if (ok) ToastService.show(`Copiado: ${s}`, 'success');
+    else ToastService.show('Não foi possível copiar', 'danger');
   },
 };
 
@@ -1587,7 +1706,7 @@ const ToastService = {
     const container = document.getElementById('toastContainer');
     const el = document.createElement('div');
     el.className = `toast ${type}`;
-    el.innerHTML = `<span class="toast-icon">${this._icons[type] || this._icons.info}</span><span class="toast-msg">${message}</span>`;
+    el.innerHTML = `<span class="toast-icon">${this._icons[type] || this._icons.info}</span><span class="toast-msg">${Utils.escapeHtml(message)}</span>`;
     container.appendChild(el);
     setTimeout(() => {
       el.classList.add('removing');
@@ -1602,8 +1721,19 @@ const ToastService = {
 ───────────────────────────────────────────────────────────── */
 const ModalService = {
   open(id)  { document.getElementById(id)?.classList.add('open'); },
-  close(id) { document.getElementById(id)?.classList.remove('open'); },
-  closeAll() { document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open')); },
+  close(id) {
+    if (id === 'opTaskModal' && typeof OpTaskService !== 'undefined' && OpTaskService._resetAtdChildrenListExpand) {
+      OpTaskService._resetAtdChildrenListExpand();
+    }
+    document.getElementById(id)?.classList.remove('open');
+  },
+  closeAll() {
+    const op = document.getElementById('opTaskModal');
+    if (op?.classList.contains('open') && typeof OpTaskService !== 'undefined' && OpTaskService._resetAtdChildrenListExpand) {
+      OpTaskService._resetAtdChildrenListExpand();
+    }
+    document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+  },
 };
 
 
@@ -1891,6 +2021,7 @@ const CalendarService = {
       priority: task.prioridade,
       regiao: task.regiao || '',
       removable: false,
+      copyRef: Utils.unifiedTaskDisplayRef(task),
     };
   },
 
@@ -1904,6 +2035,7 @@ const CalendarService = {
       status: 'Anotado',
       priority: note.priority,
       removable: true,
+      copyRef: '',
     };
   },
 
@@ -2186,21 +2318,22 @@ const UI = {
       const titleStyle = isDone ? 'text-decoration:line-through;opacity:.45' : '';
       const assinatura = String(t.assinadaPor || '').trim();
       const sigHtml = assinatura
-        ? `<div class="sig-mini">✍ ${assinatura}</div>`
+        ? `<div class="sig-mini">✍ ${Utils.escapeHtml(assinatura)}</div>`
         : '';
 
       return `
         <tr class="dashboard-row-readonly">
           <td>
             <div class="task-name-cell">
-              <span style="${titleStyle}">${t.titulo}</span>
+              ${Utils.taskCopyProtocolButtonHtml(Utils.unifiedTaskDisplayRef(t))}
+              <span style="${titleStyle}">${Utils.escapeHtml(t.titulo)}</span>
             </div>
           </td>
           <td>
             <div class="assignee-wrap">
               <div class="assignee">
                 <div class="av-sm" style="background:${color};color:#0a0c0a" aria-hidden="true">${Utils.getInitials(t.responsavel)}</div>
-                ${t.responsavel}
+                ${Utils.escapeHtml(t.responsavel)}
               </div>
               ${sigHtml}
             </div>
@@ -2315,31 +2448,35 @@ const UI = {
               : '';
             const nextStatuses = nextStatusMap[t.status] || [];
             const actionBtns = nextStatuses.map(ns =>
-              `<button class="status-action-btn ${statusActionClass[ns] || 'cemig-advance'}" data-op-id="${t.id}" data-to-status="${ns}">${statusLabels[ns]}</button>`
+              `<button class="status-action-btn ${statusActionClass[ns] || 'cemig-advance'}" data-op-id="${Utils.escapeHtml(t.id)}" data-to-status="${Utils.escapeHtml(ns)}">${Utils.escapeHtml(statusLabels[ns])}</button>`
             ).join('');
             const assinatura = String(t.assinadaPor || '').trim();
-            const sigHtml = assinatura ? `<div class="kanban-card-signature">✍ ${assinatura}</div>` : '';
+            const sigHtml = assinatura ? `<div class="kanban-card-signature">✍ ${Utils.escapeHtml(assinatura)}</div>` : '';
             const badgeParts = [this.regionBadge(t.regiao), this.priorityBadge(t.prioridade || 'Média')].filter(Boolean);
             const badgesRow = badgeParts.length ? `<div class="kanban-card-badges">${badgeParts.join('')}</div>` : '';
             const childHtml = childTasks.length
               ? `<div class="subtask-list">${childTasks.map(c => `
                    <div class="subtask-item">
-                     <span>${c.taskCode || ''} · ${c.titulo}</span>
-                     <button type="button" data-open-subtask="${c.id}">${c.status}</button>
+                     ${Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(c), 'task-copy-id-btn--sm')}
+                     <span>${Utils.escapeHtml(c.taskCode || '')} · ${Utils.escapeHtml(c.titulo)}</span>
+                     <button type="button" data-open-subtask="${Utils.escapeHtml(c.id)}">${Utils.escapeHtml(c.status)}</button>
                    </div>
                  `).join('')}</div>`
               : '';
 
             return `
-              <article class="kanban-card ${this._lastMovedOpTask && this._lastMovedOpTask.id === t.id && this._lastMovedOpTask.status === t.status ? 'just-moved' : ''}" data-op-id="${t.id}" data-op-status="${t.status}" draggable="true" aria-label="${t.titulo}">
+              <article class="kanban-card ${this._lastMovedOpTask && this._lastMovedOpTask.id === t.id && this._lastMovedOpTask.status === t.status ? 'just-moved' : ''}" data-op-id="${Utils.escapeHtml(t.id)}" data-op-status="${Utils.escapeHtml(t.status)}" draggable="true" aria-label="${Utils.escapeHtml(t.titulo)}">
                 ${parentTag}
                 ${badgesRow}
-                <div class="kanban-card-title">${t.titulo}</div>
-                <div class="kanban-card-date">${t.taskCode || ''}</div>
+                <div class="kanban-card-title-row">
+                  ${Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(t))}
+                  <div class="kanban-card-title">${Utils.escapeHtml(t.titulo)}</div>
+                </div>
+                <div class="kanban-card-date">${Utils.escapeHtml(t.taskCode || '')}</div>
                 <div class="kanban-card-meta">
                   <div class="kanban-card-assignee">
                     <div class="av-sm" style="background:${Utils.getAvatarColor(t.responsavel)};color:#0a0c0a;width:20px;height:20px;font-size:8px" aria-hidden="true">${Utils.getInitials(t.responsavel)}</div>
-                    ${t.responsavel}
+                    ${Utils.escapeHtml(t.responsavel)}
                   </div>
                   <div class="kanban-card-date ${isLate ? 'late' : ''}">${Utils.formatDate(t.prazo)}</div>
                 </div>
@@ -2483,6 +2620,8 @@ const UI = {
         date: t.prazo,
         text: t.titulo,
         source: t.sourceLabel,
+        copyRef: Utils.unifiedTaskDisplayRef(t),
+        kind: 'task',
       }));
 
     const noteItems = Store.getCalendarNotes()
@@ -2491,6 +2630,8 @@ const UI = {
         date: n.date,
         text: n.title,
         source: 'Anotação',
+        copyRef: '',
+        kind: 'note',
       }));
 
     const agenda = [...taskItems, ...noteItems]
@@ -2504,6 +2645,7 @@ const UI = {
           day: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1, 3),
           text: item.text,
           time: `${Utils.formatDate(item.date)} · ${item.source}`,
+          copyRef: item.copyRef,
         };
       });
 
@@ -2516,9 +2658,12 @@ const UI = {
     list.innerHTML = agenda.map(a => `
       <li class="agenda-item">
         <div class="agenda-day">${a.day}</div>
-        <div>
-          <div class="agenda-desc">${a.text}</div>
-          <div class="agenda-time">${a.time}</div>
+        <div class="agenda-item-body">
+          ${Utils.taskCopyProtocolButtonHtml(a.copyRef, 'task-copy-id-btn--sm')}
+          <div>
+            <div class="agenda-desc">${a.text}</div>
+            <div class="agenda-time">${a.time}</div>
+          </div>
         </div>
       </li>
     `).join('');
@@ -2595,10 +2740,14 @@ const UI = {
       const badges = [this.regionBadge(item.regiao), this.statusBadge(item.status), this.priorityBadge(item.priority || 'Média')]
         .filter(Boolean)
         .join('');
+      const copyBtn = Utils.taskCopyProtocolButtonHtml(item.copyRef, 'task-copy-id-btn--calendar');
       return `
       <article class="calendar-item">
         <div class="calendar-item-top">
-          <span class="calendar-item-title">${item.title}</span>
+          <div class="calendar-item-top-main">
+            ${copyBtn}
+            <span class="calendar-item-title">${item.title}</span>
+          </div>
           ${item.removable ? `<button class="calendar-remove-btn" data-remove-note="${item.id}" title="Remover anotação" aria-label="Remover anotação">Remover</button>` : ''}
         </div>
         <div class="calendar-item-meta">${item.sourceLabel}</div>
@@ -2697,7 +2846,7 @@ const UI = {
     lateTbody.innerHTML = lateRows.length
       ? lateRows.map(row => `
           <tr>
-            <td>${row.titulo}</td>
+            <td><span class="report-late-title-cell">${Utils.taskCopyProtocolButtonHtml(Utils.unifiedTaskDisplayRef(row), 'task-copy-id-btn--sm')}<span>${row.titulo}</span></span></td>
             <td>${row.sourceText}</td>
             <td>${row.responsavel}</td>
             <td class="date-cell date-late">${Utils.formatDate(row.prazo)}</td>
@@ -2815,279 +2964,225 @@ const UI = {
     this.renderTaskTable();
   },
 
-  /* ── Página dedicada: Atendimento ao cliente (layout novo) ───────────── */
+  /* ── Página dedicada: Atendimento ao cliente (quadro estilo kanban) ───── */
   renderAtendimentoPage() {
     const root = document.getElementById('atendimentoBoard');
     if (!root) return;
 
-    const all = OpTaskService.getFilteredByCategory('atendimento-cliente', { filterNamespace: 'atd' });
-    const normalized = all.map(t => ({ ...t, _groupStatus: ((status) => {
-      const s = String(status || '').toLowerCase();
-      if (s.includes('agend')) return 'agendado';
-      if (s.includes('andament')) return 'andamento';
-      if (s.includes('retorno')) return 'retorno';
-      if (s.includes('conclu') || s.includes('finaliz')) return 'concluido';
-      return 'entrada';
-    })(t.status) }));
-    const parents = normalized.filter(t => t.isParentTask || !t.parentTaskId);
-    const children = normalized.filter(t => t.parentTaskId);
+    root.className = 'kanban-board atd-kanban-board';
 
-    const shelves = {
-      entrada: [],
-      agendado: [],
-      andamento: [],
-      retorno: [],
-      concluido: [],
+    const atdParentKanbanColKey = (t) => {
+      const s = String(t.status || '').trim();
+      if (s === 'Finalizada') return 'Finalizada';
+      if (s === 'Concluída') return 'Concluída';
+      if (s === 'Em andamento') return 'Em andamento';
+      if (s.toLowerCase().includes('retorno')) return 'Em andamento';
+      return 'Criada';
     };
 
-    parents.forEach(p => {
-      const g = p._groupStatus;
-      const key =
-        g === 'agendado'   ? 'agendado' :
-        g === 'andamento'  ? 'andamento' :
-        g === 'retorno'    ? 'retorno'   :
-        g === 'concluido'  ? 'concluido' : 'entrada';
-      shelves[key].push(p);
+    const columns = [
+      { status: 'Criada',       key: 'col-criada',     label: 'Criada'       },
+      { status: 'Em andamento', key: 'col-andamento',  label: 'Em andamento' },
+      { status: 'Concluída',    key: 'col-concluida',  label: 'Concluída'    },
+      { status: 'Finalizada',   key: 'col-finalizada', label: 'Finalizada'   },
+    ];
+
+    const nextStatusMap = {
+      'Backlog': ['Em andamento'],
+      'A iniciar': ['Em andamento'],
+      'Criada': ['Em andamento'],
+      'Agendado': ['Em andamento'],
+      'Pendente': ['Em andamento'],
+      'Em andamento': ['Concluída'],
+      'Concluída': ['Finalizada'],
+      'Finalizada': [],
+    };
+
+    const statusLabels = {
+      'Em andamento': 'Iniciar',
+      'Concluída': 'Concluir',
+      'Finalizada': 'Finalizar',
+    };
+
+    const statusActionClass = {
+      'Em andamento': 'to-andamento',
+      'Concluída': 'to-concluida',
+      'Finalizada': 'to-finalizada',
+    };
+
+    const doneForLate = ['Concluída', 'Finalizada'];
+    const tod = Utils.todayIso();
+
+    const all = OpTaskService.getFilteredByCategory('atendimento-cliente', { filterNamespace: 'atd' });
+    const parents = all.filter(t => t.isParentTask || !t.parentTaskId);
+    const children = all.filter(t => t.parentTaskId);
+    const byParentId = new Map();
+    children.forEach(c => {
+      const pid = Number(c.parentTaskId || 0);
+      if (!pid) return;
+      if (!byParentId.has(pid)) byParentId.set(pid, []);
+      byParentId.get(pid).push(c);
     });
 
-    const buildCard = (parent, kids) => {
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'atd-book-card';
-      card.dataset.taskId = String(parent.id);
-      card.setAttribute('draggable', 'true');
+    const boardHtml = columns.map((col) => {
+      const colParents = parents.filter(p => atdParentKanbanColKey(p) === col.status);
+      const cards = colParents.length
+        ? colParents.map((parent) => {
+          const isLate = parent.prazo && parent.prazo < tod && !doneForLate.includes(parent.status);
+          const kids = byParentId.get(Number(parent.id)) || [];
+          const badgeParts = [this.regionBadge(parent.regiao), this.priorityBadge(parent.prioridade || 'Média')].filter(Boolean);
+          const badgesRow = badgeParts.length ? `<div class="kanban-card-badges">${badgeParts.join('')}</div>` : '';
+          const nextStatuses = nextStatusMap[parent.status] || [];
+          const actionBtns = nextStatuses.map((ns) =>
+            `<button type="button" class="status-action-btn ${statusActionClass[ns] || 'to-andamento'}" data-op-id="${parent.id}" data-to-status="${Utils.escapeHtmlAttr(ns)}">${statusLabels[ns] || ns}</button>`,
+          ).join('');
+          const titleEsc = Utils.escapeHtml(parent.nomeCliente || parent.titulo || '(Sem título)');
+          const codeLine = String(parent.taskCode || parent.protocolo || '').trim();
+          const statusLine = Utils.escapeHtml(String(parent.status || '—').trim());
+          const subsCount = kids.length;
+          const subsHtml = subsCount
+            ? `<p class="atd-kanban-subs">${subsCount} ordem(ns) de serviço · ${kids.filter(c => c.status === 'Concluída' || c.status === 'Finalizada').length} resolvida(s)</p>`
+            : '';
+          const assinatura = String(parent.assinadaPor || '').trim();
+          const sigHtml = assinatura ? `<div class="kanban-card-signature">✍ ${Utils.escapeHtml(assinatura)}</div>` : '';
+          const copyBtnHtml = Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(parent));
+          const codeHtml = codeLine ? `<div class="kanban-card-date">${Utils.escapeHtml(codeLine)}</div>` : '';
+          return `
+              <article class="kanban-card atd-kanban-parent-card ${this._lastMovedOpTask && this._lastMovedOpTask.id === parent.id && this._lastMovedOpTask.status === parent.status ? 'just-moved' : ''}" data-op-id="${parent.id}" draggable="true" aria-label="${titleEsc}">
+                ${badgesRow}
+                <div class="kanban-card-title-row">
+                  ${copyBtnHtml}
+                  <div class="kanban-card-title">${titleEsc}</div>
+                </div>
+                <div class="atd-kanban-status-line">Status: <strong>${statusLine}</strong></div>
+                ${codeHtml}
+                <div class="kanban-card-meta">
+                  <div class="kanban-card-assignee">
+                    <div class="av-sm" style="background:${Utils.getAvatarColor(parent.responsavel)};color:#0a0c0a;width:20px;height:20px;font-size:8px" aria-hidden="true">${Utils.getInitials(parent.responsavel)}</div>
+                    ${Utils.escapeHtml(parent.responsavel || '—')}
+                  </div>
+                  <div class="kanban-card-date ${isLate ? 'late' : ''}">${Utils.formatDate(parent.prazo)}</div>
+                </div>
+                ${sigHtml}
+                ${subsHtml}
+                <div class="kanban-card-actions">${actionBtns}</div>
+                <div class="atd-kanban-card-foot">
+                  <button type="button" class="atd-book-ico" data-atd-add-os="${parent.id}" title="Adicionar ordem de serviço" aria-label="Adicionar ordem de serviço">+</button>
+                  <button type="button" class="atd-book-ico" data-atd-edit-parent="${parent.id}" title="Editar protocolo" aria-label="Editar protocolo">✎</button>
+                </div>
+              </article>
+            `;
+        }).join('')
+        : '<div class="kanban-empty">Nenhuma lista neste estágio</div>';
 
-      const spine = document.createElement('div');
-      spine.className = 'atd-book-spine';
+      return `
+        <div class="kanban-col ${col.key}" role="group" aria-label="Coluna ${col.label}">
+          <div class="kanban-col-header">
+            <span class="kanban-col-title">${col.label}</span>
+            <span class="kanban-col-count">${colParents.length}</span>
+          </div>
+          <div class="kanban-cards" data-col-status="${Utils.escapeHtmlAttr(col.status)}">${cards}</div>
+        </div>
+      `;
+    }).join('');
 
-      const inner = document.createElement('div');
-      inner.className = 'atd-book-inner';
+    root.innerHTML = boardHtml;
 
-      const top = document.createElement('div');
-      top.className = 'atd-book-top';
+    root.onclick = (e) => {
+      const target = e.target;
+      if (!target) return;
 
-      const title = document.createElement('h3');
-      title.className = 'atd-book-title';
-      title.textContent = parent.titulo || '(Sem título)';
-
-      const protoLine = document.createElement('p');
-      protoLine.className = 'atd-book-line atd-book-line--mono';
-      const proto = parent.protocolo || parent.taskCode || parent.id;
-      protoLine.innerHTML = `<span class="atd-book-k">PROTOCOLO</span>${proto}`;
-
-      const clientLine = document.createElement('p');
-      clientLine.className = 'atd-book-line';
-      const desc = parent.descricao || parent.localizacaoTexto || parent.setor || '';
-      clientLine.innerHTML = `<span class="atd-book-k">CLIENTE/LOCAL</span>${desc || '—'}`;
-
-      const regionLine = document.createElement('p');
-      regionLine.className = 'atd-book-line atd-book-line--mono';
-      const reg = parent.regiao || 'Sem região';
-      regionLine.innerHTML = `<span class="atd-book-k">REGIÃO</span>${reg}`;
-
-      const datesLine = document.createElement('p');
-      datesLine.className = 'atd-book-line atd-book-line--mono';
-      const entrada = parent.dataEntrada || parent.criadaEm || '';
-      const prazo = parent.prazo || '';
-      datesLine.innerHTML =
-        `<span class="atd-book-k">DATAS</span>${entrada || '—'}`
-        + (prazo ? ` · prazo ${prazo}` : '');
-
-      const badgesRow = document.createElement('div');
-      badgesRow.className = 'atd-book-badges';
-
-      if (parent.prioridade) {
-        const pr = document.createElement('span');
-        pr.className = 'badge ' + (
-          parent.prioridade === 'Alta' ? 'p-high'
-          : parent.prioridade === 'Média' ? 'p-med'
-          : 'p-low'
-        );
-        pr.textContent = `Prioridade ${parent.prioridade}`;
-        badgesRow.appendChild(pr);
+      const statusBtn = target.closest?.('.status-action-btn');
+      if (statusBtn && root.contains(statusBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = +statusBtn.dataset.opId;
+        const toStatus = statusBtn.dataset.toStatus;
+        if (!id || !toStatus) return;
+        this._lastMovedOpTask = { id, status: toStatus };
+        OpTaskService.changeStatus(id, toStatus);
+        UI.refreshOperationalUi();
+        setTimeout(() => { this._lastMovedOpTask = null; }, 520);
+        UI.renderCalendarPage();
+        UI.renderReportsPage();
+        ToastService.show(`Lista movida para "${toStatus}"`, 'success');
+        return;
       }
 
-      if (parent.regiao) {
-        const regBadge = document.createElement('span');
-        const r = String(parent.regiao).toLowerCase();
-        regBadge.className = 'badge ' + (
-          r.includes('goval') ? 'reg-goval' :
-          r.includes('vale') ? 'reg-vale' :
-          r.includes('caratinga') ? 'reg-caratinga' :
-          'reg-unknown'
-        );
-        regBadge.textContent = parent.regiao;
-        badgesRow.appendChild(regBadge);
+      const addOs = target.closest?.('[data-atd-add-os]');
+      if (addOs && root.contains(addOs)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const pid = Number(addOs.dataset.atdAddOs || 0);
+        if (!pid) return;
+        Controllers.opTask.openNewModal?.({
+          category: 'atendimento-cliente',
+          parentTaskId: pid,
+          isParentTask: false,
+          status: 'Backlog',
+        });
+        return;
       }
 
-      const status = String(parent.status || 'Criada');
-      const label = status === 'Concluída' ? 'Concluído' : status;
-      const tmp = document.createElement('span');
-      tmp.innerHTML = UI.statusBadge(status);
-      const statusBadge = document.createElement('span');
-      statusBadge.className = tmp.firstElementChild?.className || 'badge';
-      statusBadge.textContent = label;
-      badgesRow.appendChild(statusBadge);
-
-      top.appendChild(title);
-      top.appendChild(protoLine);
-      top.appendChild(clientLine);
-      top.appendChild(regionLine);
-      top.appendChild(datesLine);
-      if (badgesRow.children.length) top.appendChild(badgesRow);
-
-      inner.appendChild(top);
-
-      const subsCount = kids.length;
-      if (subsCount) {
-        const done = kids.filter(c => c.status === 'Concluída' || c.status === 'Finalizada').length;
-        const subs = document.createElement('p');
-        subs.className = 'atd-book-subs';
-        subs.textContent = `${subsCount} ordem(ns) de serviço · ${done} resolvida(s)`;
-        inner.appendChild(subs);
+      const editBtn = target.closest?.('[data-atd-edit-parent]');
+      if (editBtn && root.contains(editBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        Controllers.opTask.openEditModal(+editBtn.dataset.atdEditParent);
+        return;
       }
 
-      const foot = document.createElement('div');
-      foot.className = 'atd-book-foot';
+      const card = target.closest?.('.kanban-card');
+      if (!card || !root.contains(card)) return;
+      if (target.closest?.('.status-action-btn') || target.closest?.('.task-copy-id-btn')) return;
+      if (target.closest?.('.atd-kanban-card-foot')) return;
+      Controllers.opTask.openEditModal(+card.dataset.opId);
+    };
 
-      const btnNovo = document.createElement('button');
-      btnNovo.type = 'button';
-      btnNovo.className = 'atd-book-ico';
-      btnNovo.title = 'Adicionar ordem de serviço';
-      btnNovo.textContent = '+';
+    let draggedId = null;
+    let draggedColKey = null;
 
-      const btnEditar = document.createElement('button');
-      btnEditar.type = 'button';
-      btnEditar.className = 'atd-book-ico';
-      btnEditar.title = 'Editar protocolo';
-      btnEditar.textContent = '✎';
-
-      foot.appendChild(btnNovo);
-      foot.appendChild(btnEditar);
-      inner.appendChild(foot);
-
-      card.appendChild(spine);
-      card.appendChild(inner);
-
-      card.addEventListener('click', (ev) => {
-        if (ev.target === btnNovo || ev.target.closest('.atd-book-ico') === btnNovo) {
-          ev.stopPropagation();
-          Controllers.opTask.openNewModal?.({
-            category: 'atendimento-cliente',
-            parentTaskId: parent.id,
-            isParentTask: false,
-            status: 'Backlog',
-          });
-          return;
-        }
-        Controllers.opTask.openEditModal(parent.id);
-      });
-
-      card.addEventListener('dragstart', (ev) => {
+    root.querySelectorAll('.kanban-card').forEach((card) => {
+      card.addEventListener('dragstart', (e) => {
+        draggedId = +card.dataset.opId;
+        const t = Store.findOpTask(draggedId);
+        draggedColKey = t ? atdParentKanbanColKey(t) : null;
         card.classList.add('dragging');
-        ev.dataTransfer.effectAllowed = 'move';
-        ev.dataTransfer.setData('text/plain', String(parent.id));
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(draggedId));
       });
       card.addEventListener('dragend', () => {
         card.classList.remove('dragging');
+        root.querySelectorAll('.kanban-cards.drag-over').forEach((c) => c.classList.remove('drag-over'));
       });
+    });
 
-      return card;
-    };
-
-    const buildShelf = (title, key, list) => {
-      const shelf = document.createElement('section');
-      shelf.className = 'atd-shelf';
-      shelf.dataset.shelf = key;
-
-      const head = document.createElement('header');
-      head.className = 'atd-shelf-head';
-
-      const toggle = document.createElement('button');
-      toggle.type = 'button';
-      toggle.className = 'atd-shelf-toggle';
-      toggle.innerHTML = `
-        <span class="atd-shelf-title">${title}</span>
-        <span class="atd-shelf-count">${list.length}</span>
-      `;
-
-      const body = document.createElement('div');
-      body.className = 'atd-shelf-body open';
-
-      const plank = document.createElement('div');
-      plank.className = 'atd-shelf-plank';
-
-      const books = document.createElement('div');
-      books.className = 'atd-shelf-books';
-      books.dataset.dropShelf = key;
-
-      if (!list.length) {
-        const empty = document.createElement('div');
-        empty.className = 'atd-shelf-empty';
-        empty.textContent = 'Nenhum atendimento neste estágio.';
-        books.appendChild(empty);
-      } else {
-        const byId = new Map();
-        children.forEach(c => {
-          const pid = Number(c.parentTaskId || 0);
-          if (!pid) return;
-          if (!byId.has(pid)) byId.set(pid, []);
-          byId.get(pid).push(c);
-        });
-        list.forEach(p => {
-          const kids = byId.get(Number(p.id)) || [];
-          books.appendChild(buildCard(p, kids));
-        });
-      }
-
-      books.addEventListener('dragover', (ev) => {
-        ev.preventDefault();
-        books.classList.add('drag-over');
+    root.querySelectorAll('.kanban-cards').forEach((col) => {
+      col.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        col.classList.add('drag-over');
       });
-      books.addEventListener('dragleave', (ev) => {
-        if (ev.relatedTarget && books.contains(ev.relatedTarget)) return;
-        books.classList.remove('drag-over');
+      col.addEventListener('dragleave', (e) => {
+        if (e.relatedTarget && col.contains(e.relatedTarget)) return;
+        col.classList.remove('drag-over');
       });
-      books.addEventListener('drop', (ev) => {
-        ev.preventDefault();
-        books.classList.remove('drag-over');
-        const dragging = root.querySelector('.atd-book-card.dragging');
-        if (!dragging) return;
-        const id = Number(dragging.dataset.taskId || 0);
-        if (!id) return;
-        const statusMap = {
-          entrada: 'Criada',
-          agendado: 'Agendado',
-          andamento: 'Em andamento',
-          retorno: 'Em andamento',
-          concluido: 'Concluída',
-        };
-        const newStatus = statusMap[key] || 'Criada';
-        OpTaskService.changeStatus(id, newStatus);
+      col.addEventListener('drop', (e) => {
+        e.preventDefault();
+        col.classList.remove('drag-over');
+        col.classList.add('drop-flash');
+        setTimeout(() => col.classList.remove('drop-flash'), 500);
+        const targetStatus = col.dataset.colStatus;
+        if (!draggedId || !targetStatus || targetStatus === draggedColKey) return;
+        this._lastMovedOpTask = { id: draggedId, status: targetStatus };
+        OpTaskService.changeStatus(draggedId, targetStatus);
         UI.refreshOperationalUi();
-        ToastService.show(`Atendimento movido para "${title}"`, 'success');
+        setTimeout(() => { this._lastMovedOpTask = null; }, 520);
+        UI.renderCalendarPage();
+        UI.renderReportsPage();
+        ToastService.show(`Lista movida para "${targetStatus}"`, 'success');
       });
-
-      toggle.addEventListener('click', () => {
-        const open = body.classList.contains('open');
-        body.classList.toggle('open', !open);
-      });
-
-      body.appendChild(books);
-      shelf.appendChild(head);
-      head.appendChild(toggle);
-      shelf.appendChild(body);
-      shelf.appendChild(plank);
-
-      root.appendChild(shelf);
-    };
-
-    root.innerHTML = '';
-    buildShelf('Entrada / Triagem', 'entrada',   shelves.entrada);
-    buildShelf('Agendado',          'agendado',  shelves.agendado);
-    buildShelf('Em atendimento',    'andamento', shelves.andamento);
-    buildShelf('Aguardando retorno','retorno',   shelves.retorno);
-    buildShelf('Concluído',         'concluido', shelves.concluido);
+    });
   },
 
   /** Atualiza Kanban (Tarefas) ou painel de Atendimento conforme a página ativa. */
@@ -3969,11 +4064,18 @@ const Controllers = {
       const prioridade = document.getElementById('opPrioridadeGroup');
       const regiao = document.getElementById('opRegiaoGroup');
       const atdChild = document.getElementById('opAtdChildOnlyWrap');
+      const mainRow = document.getElementById('opMainRow');
+      const responsavel = document.getElementById('opResponsavelGroup');
+      const prazoGroup = document.getElementById('opPrazoGroup');
       if (!body || !priorityRow || !prioridade || !regiao) return;
       priorityRow.appendChild(prioridade);
       priorityRow.appendChild(regiao);
       if (atdChild && atdChild.parentNode === body) atdChild.after(priorityRow);
       else body.appendChild(priorityRow);
+      if (mainRow && responsavel && prazoGroup) {
+        mainRow.appendChild(responsavel);
+        mainRow.appendChild(prazoGroup);
+      }
       this._restoreOtimRedeLayout();
     },
     /** Recoloca Região e Técnico após o modo Otimização de Rede. */
@@ -4118,7 +4220,11 @@ const Controllers = {
         else if (isTrocaPoste) modalTitle.textContent = 'Nova troca de poste';
         else if (category === 'certificacao-cemig') modalTitle.textContent = 'Nova certificação Cemig';
         else if (isOtimRede) modalTitle.textContent = 'Nova otimização de rede';
-        else modalTitle.textContent = 'Nova tarefa';
+        else if (category === 'atendimento-cliente') {
+          const hid = document.getElementById('op-parent-task-id');
+          const isListaPai = !String(hid?.value || '').trim();
+          modalTitle.textContent = isListaPai ? 'Nova lista de atendimento' : 'Nova ordem de serviço';
+        } else modalTitle.textContent = 'Nova tarefa';
       }
 
       if (isRompimento) {
@@ -4185,9 +4291,11 @@ const Controllers = {
       const responsavelGroup = responsavelInput?.closest('.form-group');
       const prazoGroup = prazoInput?.closest('.form-group');
       const regiaoGroup = regiaoSelect?.closest('.form-group');
-      const isRompimento = this._isRompimentoCategory();
-      const isTrocaPoste = this._isTrocaPosteCategory();
-      const isAtdCliente = this._isAtendimentoClienteCategory();
+      // Importante: usar modalCat (preset / tarefa em edição), não só Store.currentOpCategory
+      // (na página Atendimento a aba Tarefas pode estar com outra categoria selecionada).
+      const isRompimento = modalCat === 'rompimentos';
+      const isTrocaPoste = modalCat === 'troca-poste';
+      const isAtdCliente = modalCat === 'atendimento-cliente';
       const atdWrap = document.getElementById('opAtdParentOnlyWrap');
       const atdChildWrap = document.getElementById('opAtdChildOnlyWrap');
       const regiaoSlot = document.getElementById('opAtdRegiaoSlot');
@@ -4223,6 +4331,11 @@ const Controllers = {
         if (regiaoSlot && regiaoGroup && regiaoGroup.parentElement !== regiaoSlot) {
           regiaoSlot.appendChild(regiaoGroup);
         }
+        const parentTecSlotI = document.getElementById('opAtdParentTecnicoSlot');
+        const tecGroupParent = responsavelInput?.closest('.form-group');
+        if (parentTecSlotI && tecGroupParent && tecGroupParent.parentElement !== parentTecSlotI) {
+          parentTecSlotI.appendChild(tecGroupParent);
+        }
       }
 
       if (atdChildOnly) {
@@ -4244,9 +4357,8 @@ const Controllers = {
       }
 
       if (responsavelInput) {
-        // Pai (ATD): responsável vem da assinatura; Filha (ATD): precisa escolher técnico.
-        if (atdParentOnly) responsavelInput.disabled = true;
-        else if (atdChildOnly) responsavelInput.disabled = false;
+        // Atendimento: técnico é opcional (pai e filha).
+        if (atdParentOnly || atdChildOnly) responsavelInput.disabled = false;
         else if (isRompimento || isTrocaPoste) {
           const hasRegion = Boolean(String(regiaoSelect?.value || '').trim());
           responsavelInput.disabled = !hasRegion;
@@ -4268,6 +4380,16 @@ const Controllers = {
         else regiaoSelect.disabled = !isParent;
       }
 
+      const tituloGrp = document.getElementById('opTituloGroup');
+      const tituloLabS = document.querySelector('label[for="op-titulo"]');
+      if (tituloGrp) {
+        if (atdParentOnly || atdChildOnly) tituloGrp.style.display = 'none';
+        else {
+          tituloGrp.style.display = '';
+          if (tituloLabS && isAtdCliente) tituloLabS.textContent = 'Nome da tarefa';
+        }
+      }
+
       this._syncTecnicosDatalist();
       this._syncSelectedTecnicoChatId();
     },
@@ -4278,6 +4400,37 @@ const Controllers = {
       if (currentTask && currentTask.parentTaskId) hidden.value = String(currentTask.parentTaskId);
       else if (this._newTaskPreset?.parentTaskId) hidden.value = String(this._newTaskPreset.parentTaskId);
       else hidden.value = '';
+    },
+    _closeAtdStatusDropdown() {
+      const dd = document.getElementById('opAtdStatusDropdown');
+      if (!dd) return;
+      dd.hidden = true;
+      delete dd.dataset.childId;
+    },
+    _positionAtdStatusDropdown(anchorEl) {
+      const dd = document.getElementById('opAtdStatusDropdown');
+      if (!dd || !anchorEl) return;
+      const rect = anchorEl.getBoundingClientRect();
+      const ddW = dd.offsetWidth || 188;
+      const ddH = dd.offsetHeight || 120;
+      let left = rect.left;
+      let top = rect.bottom + 6;
+      if (left + ddW > window.innerWidth - 8) left = window.innerWidth - ddW - 8;
+      if (left < 8) left = 8;
+      if (top + ddH > window.innerHeight - 8) top = rect.top - ddH - 6;
+      if (top < 8) top = 8;
+      dd.style.left = `${Math.round(left)}px`;
+      dd.style.top = `${Math.round(top)}px`;
+    },
+    _resetAtdChildrenListExpand() {
+      const wrap = document.getElementById('opAtdChildrenWrap');
+      const btn = document.getElementById('opAtdChildrenExpandBtn');
+      if (wrap) wrap.classList.remove('is-expanded');
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.title = 'Expandir lista';
+        btn.setAttribute('aria-label', 'Expandir lista de ordens de serviço vinculadas');
+      }
     },
     _refreshAtdChildrenList() {
       const childrenWrap = document.getElementById('opAtdChildrenWrap');
@@ -4291,6 +4444,7 @@ const Controllers = {
 
       const isAtdChild = this._isAtendimentoCategory(category) && !!parentId;
       if (!isAtdChild) {
+        this._resetAtdChildrenListExpand();
         childrenWrap.style.display = 'none';
         childrenList.innerHTML = '';
         return;
@@ -4307,8 +4461,10 @@ const Controllers = {
           const prazo = t.prazo ? Utils.formatDate(t.prazo) : 'sem prazo';
           const status = Utils.escapeHtml(t.status || 'Pendente');
           const isDone = ['Concluída', 'Finalizada', 'Finalizado'].includes(t.status);
+          const isEmAndamento = !isDone && t.status === 'Em andamento';
+          const liClass = [isDone && 'done', isEmAndamento && 'atd-in-progress'].filter(Boolean).join(' ');
           return `
-            <li class="${isDone ? 'done' : ''}">
+            <li class="${liClass}">
               <label class="atd-modal-children-check">
                 <input type="checkbox" data-child-id="${t.id}" ${isDone ? 'checked' : ''} />
               </label>
@@ -4316,6 +4472,7 @@ const Controllers = {
                 <span class="atd-modal-children-title">${title}</span>
                 <span class="atd-modal-children-meta">${who} · ${prazo}</span>
               </div>
+              ${Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(t), 'task-copy-id-btn--sm')}
               <span class="atd-modal-children-status">${status}</span>
             </li>
           `;
@@ -4325,14 +4482,25 @@ const Controllers = {
 
       if (!childrenList.dataset.boundStatusClick) {
         childrenList.addEventListener('click', (e) => {
-          const input = e.target.closest('.atd-modal-children-check input[type=checkbox]');
+          const wrap = e.target.closest('.atd-modal-children-check');
+          const input = wrap?.querySelector('input[type=checkbox]');
           if (!input) return;
+          e.preventDefault();
+          e.stopPropagation();
           const id = Number(input.dataset.childId || 0);
           if (!id) return;
-          const pickerOverlay = document.getElementById('opAtdStatusPickerOverlay');
-          if (!pickerOverlay) return;
-          pickerOverlay.dataset.childId = String(id);
-          pickerOverlay.setAttribute('aria-hidden', 'false');
+          const dd = document.getElementById('opAtdStatusDropdown');
+          if (!dd) return;
+          if (!dd.hidden && dd.dataset.childId === String(id)) {
+            this._closeAtdStatusDropdown();
+            return;
+          }
+          dd.dataset.childId = String(id);
+          dd.hidden = false;
+          requestAnimationFrame(() => {
+            this._positionAtdStatusDropdown(input);
+            document.getElementById('opAtdStatusDropdown')?.querySelector('.atd-status-dropdown-item')?.focus();
+          });
         });
         childrenList.dataset.boundStatusClick = '1';
       }
@@ -4388,6 +4556,10 @@ const Controllers = {
       const dataInst = document.getElementById('op-atd-data-instalacao');
       const os = document.getElementById('op-atd-ordem-servico');
       const desc = document.getElementById('op-atd-descricao');
+      const nomeCliClear = document.getElementById('op-atd-nome-cliente');
+      if (nomeCliClear) nomeCliClear.value = '';
+      const childTituloClear = document.getElementById('op-atd-child-titulo');
+      if (childTituloClear) childTituloClear.value = '';
       if (proto) proto.value = '';
       if (dataEnt) dataEnt.value = '';
       if (subp) subp.value = '';
@@ -4405,7 +4577,10 @@ const Controllers = {
       const cemigDescClear = document.getElementById('op-cemig-descricao');
       if (cemigDescClear) cemigDescClear.innerHTML = '';
       document.getElementById('op-prazo').value       = '';
-      document.getElementById('op-prioridade').value  = 'Alta';
+      {
+        const catClear = preset.category || Store.currentOpCategory;
+        document.getElementById('op-prioridade').value = catClear === 'atendimento-cliente' ? '' : 'Alta';
+      }
       document.getElementById('op-regiao').value      = '';
       const coordsInput = document.getElementById('op-coords');
       const addressInput = document.getElementById('op-address-readonly');
@@ -4441,6 +4616,11 @@ const Controllers = {
       this._syncCategorySpecificFields(category);
       this._newTaskPreset = { ...preset };
       this._syncAtendimentoKindFields();
+      const modalCopyBtnClear = document.getElementById('opTaskModalCopyIdBtn');
+      if (modalCopyBtnClear) {
+        modalCopyBtnClear.hidden = true;
+        delete modalCopyBtnClear.dataset.copyProtocol;
+      }
     },
 
     _validate() {
@@ -4462,6 +4642,7 @@ const Controllers = {
       const dataInstalacaoRaw = document.getElementById('op-atd-data-instalacao')?.value || '';
       const ordemServicoRaw = document.getElementById('op-atd-ordem-servico')?.value?.trim() || '';
       let descAtdRaw = document.getElementById('op-atd-descricao')?.value?.trim() || '';
+      const nomeClienteRaw = document.getElementById('op-atd-nome-cliente')?.value?.trim() || '';
       const selectedParent = parentTaskId ? Store.findOpTask(parentTaskId) : null;
       const codeRegion = isParentTask ? regiao : (selectedParent?.regiao || regiao);
       const taskCode = existing?.taskCode || this._nextTaskCode(category, codeRegion);
@@ -4483,12 +4664,18 @@ const Controllers = {
       const isAtdParentOnly = this._isAtendimentoClienteCategory(category) && isParentTask && !isRompimento;
       const isAtdChildOnly = this._isAtendimentoClienteCategory(category) && !isParentTask && !isRompimento;
 
-      if (!isRompimento && !isTrocaPoste && !isCemig && !isOtimRede && !titulo) titulo = 'Sem título';
-      if (!isAtdParentOnly && isParentTask && !responsavel && !isOtimRede && !isCemig) responsavel = getSignedUserName();
-      if (!isAtdParentOnly && !isRompimento && !isOtimRede && !isCemig && isParentTask && !prazo) prazo = Utils.todayIso();
+      if (isAtdChildOnly) {
+        titulo = document.getElementById('op-atd-child-titulo')?.value?.trim() || '';
+      }
+
+      if (!isRompimento && !isTrocaPoste && !isCemig && !isOtimRede && !isAtdParentOnly && !isAtdChildOnly && !titulo) titulo = 'Sem título';
+      if (!isAtdParentOnly && !isAtdChildOnly && isParentTask && !responsavel && !isOtimRede && !isCemig) responsavel = getSignedUserName();
+      if (!isAtdParentOnly && !isAtdChildOnly && !isRompimento && !isOtimRede && !isCemig && isParentTask && !prazo) prazo = Utils.todayIso();
       const prioridadeEl = document.getElementById('op-prioridade');
-      if (!isRompimento && !isOtimRede && !isCemig && prioridadeEl && !prioridadeEl.value) prioridadeEl.value = 'Média';
-      if (isParentTask && !regiao && !isOtimRede && !isCemig) regiao = 'N/D';
+      if (!isRompimento && !isOtimRede && !isCemig && !isAtdParentOnly && !isAtdChildOnly && prioridadeEl && !prioridadeEl.value) {
+        prioridadeEl.value = 'Média';
+      }
+      if (isParentTask && !regiao && !isOtimRede && !isCemig && !this._isAtendimentoClienteCategory(category)) regiao = 'N/D';
       if (isRompimento && !setorCto) setorCto = 'N/D';
       if ((isRompimento || isTrocaPoste) && !coordsRaw) coordsRaw = '0, 0';
       if ((isRompimento || isTrocaPoste) && !autoAddress) autoAddress = 'Local não informado (teste)';
@@ -4498,17 +4685,6 @@ const Controllers = {
       if (this._isAtendimentoCategory(category) && !isParentTask && !selectedParent) {
         ToastService.show('Subtarefa inválida: crie pela tarefa pai', 'danger');
         return null;
-      }
-
-      if (isAtdParentOnly) {
-        if (!protocoloRaw) protocoloRaw = 'PROT-TESTE';
-        if (!dataEntradaRaw) dataEntradaRaw = Utils.todayIso();
-        if (!subProcessoRaw) subProcessoRaw = 'N/D';
-      }
-
-      if (isAtdChildOnly) {
-        if (!regiao) regiao = String(selectedParent?.regiao || '').trim() || 'N/D';
-        if (!descAtdRaw) descAtdRaw = '—';
       }
 
       const presetStatus = this._newTaskPreset?.status || null;
@@ -4528,7 +4704,11 @@ const Controllers = {
             ? (cemigProto ? `Cemig — ${cemigProto}` : (existing?.titulo || 'Certificação Cemig'))
             : (isOtimRede
               ? (titulo.trim() || (otimProto && otimOs ? `${otimProto} · ${otimOs}` : (otimProto || otimOs || existing?.titulo || 'Otimização de rede')))
-              : titulo)));
+              : (isAtdParentOnly
+                ? (nomeClienteRaw || titulo.trim() || existing?.titulo || '')
+                : (isAtdChildOnly
+                  ? (titulo.trim() || existing?.titulo || '')
+                  : titulo)))));
       const finalPrazo = isRompimento
         ? Utils.todayIso()
         : isOtimRede
@@ -4536,9 +4716,10 @@ const Controllers = {
           : isCemig
             ? (prazo || existing?.prazo || Utils.todayIso())
             : (isAtdParentOnly
-              ? (dataEntradaRaw || Utils.todayIso())
+              ? (prazo || existing?.prazo || '')
               : (isParentTask ? prazo : (selectedParent?.prazo || existing?.prazo || '')));
-      const finalPrioridade = isRompimento ? 'Alta' : (isOtimRede || isCemig ? 'Média' : document.getElementById('op-prioridade').value);
+      const prioPick = prioridadeEl ? prioridadeEl.value : '';
+      const finalPrioridade = isRompimento ? 'Alta' : (isOtimRede || isCemig ? 'Média' : prioPick);
       const finalDescricaoMeta = isRompimento
         ? `Coordenadas: ${coordsRaw} | Local: ${autoAddress}`
         : (isTrocaPoste ? '' : '');
@@ -4573,12 +4754,14 @@ const Controllers = {
           ? ordemServicoRaw
           : (selectedParent?.ordemServico || existing?.ordemServico || '');
       const finalResponsavel = isAtdParentOnly
-        ? getSignedUserName()
+        ? (responsavel || existing?.responsavel || '')
         : (isOtimRede || isCemig
           ? (responsavel || existing?.responsavel || '')
           : (isParentTask
             ? responsavel
-            : (responsavel || selectedParent?.responsavel || existing?.responsavel || getSignedUserName())));
+            : (isAtdChildOnly
+              ? (responsavel || existing?.responsavel || selectedParent?.responsavel || '')
+              : (responsavel || selectedParent?.responsavel || existing?.responsavel || getSignedUserName()))));
       const otimDescEl = document.getElementById('op-otim-descricao');
       const otimDescHtml = isOtimRede && otimDescEl ? String(otimDescEl.innerHTML || '').trim() : '';
       const cemigDescEl = document.getElementById('op-cemig-descricao');
@@ -4590,7 +4773,7 @@ const Controllers = {
           : (this._isAtendimentoClienteCategory(category) && !isParentTask)
             ? descAtdRaw
             : finalDescricaoMeta;
-      return {
+      const payload = {
         taskCode,
         titulo: finalTitulo,
         responsavel: finalResponsavel,
@@ -4613,16 +4796,18 @@ const Controllers = {
         isParentTask: this._isAtendimentoCategory(category) ? isParentTask : false,
         parentTaskId: this._isAtendimentoCategory(category) ? (isParentTask ? null : parentTaskId) : null,
       };
+      if (isAtdParentOnly) payload.nomeCliente = nomeClienteRaw;
+      return payload;
     },
 
     openNewModal(preset = {}) {
       Store.editingOpTaskId = null;
-      if (preset.category && Store.currentPage === 'tarefas') Store.currentOpCategory = preset.category;
-      document.getElementById('opTaskModalTitle').textContent = (
-        this._isAtendimentoCategory(preset.category) && preset.parentTaskId
-      )
-        ? 'Nova ordem de serviço'
-        : 'Nova tarefa';
+      if (preset.category) Store.currentOpCategory = preset.category;
+      const isAtd = this._isAtendimentoCategory(preset.category);
+      document.getElementById('opTaskModalTitle').textContent =
+        isAtd && preset.parentTaskId ? 'Nova ordem de serviço'
+          : isAtd && !preset.parentTaskId ? 'Nova lista de atendimento'
+            : 'Nova tarefa';
       const deleteBtn = document.getElementById('deleteOpTaskBtn');
       if (deleteBtn) deleteBtn.style.display = 'none';
       this._clearForm(preset);
@@ -4642,7 +4827,9 @@ const Controllers = {
             : task.categoria === 'otimizacao-rede' ? 'Editar otimização de rede'
               : 'Editar tarefa';
       document.getElementById('op-titulo').value =
-        task.categoria === 'troca-poste' || task.categoria === 'certificacao-cemig' ? '' : task.titulo;
+        task.categoria === 'troca-poste' || task.categoria === 'certificacao-cemig' || task.categoria === 'atendimento-cliente'
+          ? ''
+          : task.titulo;
       document.getElementById('op-responsavel').value = task.responsavel;
       const chatIdHidden = document.getElementById('op-responsavel-chatid');
       if (chatIdHidden) chatIdHidden.value = String(task.responsavelChatId || '').trim();
@@ -4669,6 +4856,8 @@ const Controllers = {
         if (subp) subp.value = '';
         if (dataInst) dataInst.value = '';
         if (desc) desc.value = '';
+        const childTituloOtim = document.getElementById('op-atd-child-titulo');
+        if (childTituloOtim) childTituloOtim.value = '';
         if (opCemigProto) opCemigProto.value = '';
         const cemigDescOtim = document.getElementById('op-cemig-descricao');
         if (cemigDescOtim) cemigDescOtim.innerHTML = '';
@@ -4685,6 +4874,8 @@ const Controllers = {
         if (subp) subp.value = '';
         if (dataInst) dataInst.value = '';
         if (desc) desc.value = '';
+        const childTituloCem = document.getElementById('op-atd-child-titulo');
+        if (childTituloCem) childTituloCem.value = '';
         if (opOtimProto) opOtimProto.value = '';
         if (opOtimOs) opOtimOs.value = '';
         const otimDescC = document.getElementById('op-otim-descricao');
@@ -4695,12 +4886,22 @@ const Controllers = {
           this._wrapBareOtimDescricaoImages(cemigDescEdit);
         }
       } else {
+        const nomeCliEdit = document.getElementById('op-atd-nome-cliente');
+        if (nomeCliEdit) {
+          const nc = String(task.nomeCliente || '').trim();
+          nomeCliEdit.value = nc || (task.categoria === 'atendimento-cliente' && !task.parentTaskId ? String(task.titulo || '').trim() : '');
+        }
         if (proto) proto.value = String(task.protocolo || '').trim();
         if (dataEnt) dataEnt.value = String(task.dataEntrada || '').trim();
         if (subp) subp.value = String(task.subProcesso || '').trim();
         if (dataInst) dataInst.value = String(task.dataInstalacao || '').trim();
         if (os) os.value = String(task.ordemServico || '').trim();
         if (desc) desc.value = String(task.descricao || '').trim();
+        const childTituloEdit = document.getElementById('op-atd-child-titulo');
+        if (childTituloEdit) {
+          childTituloEdit.value =
+            task.categoria === 'atendimento-cliente' && task.parentTaskId ? String(task.titulo || '').trim() : '';
+        }
         if (opOtimProto) opOtimProto.value = '';
         if (opOtimOs) opOtimOs.value = '';
         if (opCemigProto) opCemigProto.value = '';
@@ -4710,7 +4911,7 @@ const Controllers = {
         if (cemigDescOther) cemigDescOther.innerHTML = '';
       }
       document.getElementById('op-prazo').value       = task.prazo || '';
-      document.getElementById('op-prioridade').value  = task.prioridade;
+      document.getElementById('op-prioridade').value  = task.prioridade || '';
       document.getElementById('op-regiao').value      = task.regiao || '';
       const hidden = document.getElementById('op-parent-task-id');
       if (hidden) hidden.value = task.parentTaskId ? String(task.parentTaskId) : '';
@@ -4791,6 +4992,13 @@ const Controllers = {
       }
       if (task.categoria === 'certificacao-cemig' && cemigGC?.value?.trim() && !cemigGA?.value?.trim()) {
         void this._resolveCoordsToAddress(cemigGC.value, 'cemig');
+      }
+      const modalCopyBtn = document.getElementById('opTaskModalCopyIdBtn');
+      if (modalCopyBtn) {
+        const cref = Utils.opTaskDisplayRef(task);
+        modalCopyBtn.hidden = !cref;
+        if (cref) modalCopyBtn.dataset.copyProtocol = cref;
+        else delete modalCopyBtn.dataset.copyProtocol;
       }
     },
 
@@ -4916,21 +5124,13 @@ const Controllers = {
       });
       document.getElementById('saveOpTaskBtn').addEventListener('click', () => this.save());
 
-      // Picker de status para subtarefas de atendimento.
-      const pickerOverlay = document.getElementById('opAtdStatusPickerOverlay');
-      const pickerClose = document.getElementById('opAtdStatusPickerClose');
-      if (pickerOverlay && pickerClose) {
-        const closePicker = () => {
-          pickerOverlay.setAttribute('aria-hidden', 'true');
-          delete pickerOverlay.dataset.childId;
-        };
-        pickerClose.addEventListener('click', closePicker);
-        pickerOverlay.addEventListener('click', (e) => {
-          if (e.target === pickerOverlay) closePicker();
-        });
-        pickerOverlay.querySelectorAll('.status-pill').forEach((btn) => {
+      // Dropdown de status para ordens vinculadas (lista no modal de atendimento).
+      const statusDd = document.getElementById('opAtdStatusDropdown');
+      if (statusDd) {
+        const closeDropdown = () => this._closeAtdStatusDropdown();
+        statusDd.querySelectorAll('.atd-status-dropdown-item').forEach((btn) => {
           btn.addEventListener('click', () => {
-            const id = Number(pickerOverlay.dataset.childId || 0);
+            const id = Number(statusDd.dataset.childId || 0);
             if (!id) return;
             const nextStatus = btn.dataset.status;
             if (!nextStatus) return;
@@ -4938,8 +5138,16 @@ const Controllers = {
             this._refreshAtdChildrenList();
             UI.renderCalendarPage();
             UI.refreshOperationalUi();
-            closePicker();
+            closeDropdown();
           });
+        });
+        document.addEventListener('click', (e) => {
+          if (statusDd.hidden) return;
+          if (statusDd.contains(e.target)) return;
+          closeDropdown();
+        });
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !statusDd.hidden) closeDropdown();
         });
       }
       document.getElementById('deleteOpTaskBtn')?.addEventListener('click', () => this.deleteTask());
@@ -4987,6 +5195,19 @@ const Controllers = {
       ['closeOpTaskModal','cancelOpTaskModal'].forEach(id =>
         document.getElementById(id)?.addEventListener('click', () => ModalService.close('opTaskModal'))
       );
+      document.getElementById('opAtdChildrenExpandBtn')?.addEventListener('click', () => {
+        const wrap = document.getElementById('opAtdChildrenWrap');
+        const btn = document.getElementById('opAtdChildrenExpandBtn');
+        if (!wrap || !btn) return;
+        wrap.classList.toggle('is-expanded');
+        const expanded = wrap.classList.contains('is-expanded');
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        btn.title = expanded ? 'Recolher lista' : 'Expandir lista';
+        btn.setAttribute(
+          'aria-label',
+          expanded ? 'Recolher lista de ordens de serviço vinculadas' : 'Expandir lista de ordens de serviço vinculadas'
+        );
+      });
     },
   },
 
@@ -6148,6 +6369,19 @@ async function initApp() {
   CtoLocationRegistry.load().catch(() => {});
   Controllers.auth.init();
   ChatMentionNotifs.syncBellUi();
+
+  document.addEventListener(
+    'click',
+    (e) => {
+      const btn = e.target.closest('.task-copy-id-btn');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const raw = String(btn.dataset.copyProtocol || '').trim();
+      void Utils.copyProtocolWithToast(raw);
+    },
+    true,
+  );
 
   // Bootstrap remoto pode demorar; listeners precisam existir antes do await
   // para quem logar rápido não ficar com UI “morta”.

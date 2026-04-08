@@ -1,25 +1,16 @@
-// Config local (não versionar com tokens reais, se possível).
-// apiBaseUrl: na HostGator costuma ser auto (mesmo domínio + pasta do app + /api). Defina manual só se a subpasta exigir.
-// appBuild: altere a cada deploy (ex. 2026-03-30-2). Limpa cache local antigo e força navegador a buscar JS/CSS novos.
+// Config local (não commitar segredos).
 (function () {
   const prev = (typeof window !== 'undefined' && window.APP_CONFIG) ? window.APP_CONFIG : {};
 
   window.APP_CONFIG = {
     ...prev,
     appBuild: Object.prototype.hasOwnProperty.call(prev, 'appBuild') ? prev.appBuild : '2026-03-30-1',
-    // Webhooks por região (Google Chat).
-    // IMPORTANTE: URLs com token são sensíveis. Configure somente em ambiente privado
-    // e evite commitar valores reais. Deixe vazio aqui e, se precisar, sobrescreva
-    // via outro script local não versionado.
-    defaultWebhookUrlsByRegion: {
-      GOVAL: '',
-      VALE_DO_ACO: '',
-      CARATINGA: '',
-      BACKUP: '',
-    },
+    // Webhooks por região (Google Chat). Deixe vazio no repositório.
+    defaultWebhookUrlsByRegion: Object.prototype.hasOwnProperty.call(prev, 'defaultWebhookUrlsByRegion')
+      ? prev.defaultWebhookUrlsByRegion
+      : { GOVAL: '', VALE_DO_ACO: '', CARATINGA: '', BACKUP: '' },
 
-    // Diretório de técnicos para autocomplete + menções no Chat.
-    // `chatUserId`: pode ser um número (ex.: "123456789") ou o resource name (ex.: "users/123456789").
+    // Técnicos para autocomplete + menções no Chat.
     techsByRegion: {
       GOVAL: [
         { name: 'Diogo', chatUserId: '108550026877105275192' },

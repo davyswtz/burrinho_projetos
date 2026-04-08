@@ -102,8 +102,9 @@ O BurrinhoPlanner trouxe uma melhoria direta na operação do setor de projetos 
 ## Configuração e segurança (deploy)
 
 - **API PHP:** copie `api/credentials.example.php` para `credentials.php` e configure o MySQL (ver `HOSTGATOR.md`).
-- **Front-end:** copie `src/js/config.example.js` para `config.js` se precisar de `apiBaseUrl`, webhook padrão (`defaultWebhookUrl`), pasta dos JSON de CTO (`ctoDataBase`) ou login (`authUsers`). Não versionar segredos.
-- **Webhook Google Chat:** se uma URL com token já apareceu em repositório ou histórico público, **regenere o webhook** no Google Workspace.
+- **Front-end:** copie `src/js/config.example.js` para `src/js/config.js` se precisar de `apiBaseUrl`, webhook padrão (`defaultWebhookUrl`), pasta dos JSON de CTO (`ctoDataBase`) ou login (`authUsers`).
+- **Segredos:** não commitar `src/js/config.js` (webhooks) nem `api/credentials.php` (MySQL).
+- **Webhook Google Chat:** se já vazou, gere outro.
 
 ---
 

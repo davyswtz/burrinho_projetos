@@ -1,5 +1,12 @@
-# Credenciais MySQL (HostGator) — nunca commitar
+# Credenciais MySQL
 api/credentials.php
+
+# Config local
+src/js/config.js
+
+# Variáveis de ambiente
+.env
+.env.*
 
 # Dependências locais / SO
 node_modules/
