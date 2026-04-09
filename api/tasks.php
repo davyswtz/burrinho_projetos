@@ -25,7 +25,8 @@ try {
               responsavel = VALUES(responsavel),
               prazo = VALUES(prazo),
               status = VALUES(status),
-              prioridade = VALUES(prioridade)';
+              prioridade = VALUES(prioridade),
+              updated_at = NOW()';
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         ':id' => $id,

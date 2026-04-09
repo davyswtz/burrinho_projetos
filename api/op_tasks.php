@@ -70,7 +70,8 @@ try {
               parent_task_id = VALUES(parent_task_id),
               criadaEm = VALUES(criadaEm),
               historico = VALUES(historico),
-              chat_thread_key = VALUES(chat_thread_key)';
+              chat_thread_key = VALUES(chat_thread_key),
+              updated_at = NOW()';
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         ':id' => $id,

@@ -274,10 +274,12 @@ const Store = (() => {
           ...(hasJsonBody ? { 'Content-Type': 'application/json' } : {}),
           ...(optHeaders && typeof optHeaders === 'object' ? optHeaders : {}),
         };
+        const noCache = (method === 'GET' || method === 'HEAD') ? { cache: 'no-store' } : {};
         const response = await fetch(`${this.baseUrl}${path}`, {
           ...rest,
           signal: ctrl.signal,
           headers,
+          ...noCache,
           credentials: 'same-origin',
         });
         clearTimeout(kill);
@@ -311,10 +313,18 @@ const Store = (() => {
       return null;
     },
     async getBootstrap() {
-      return this.requestAny(['/bootstrap.php', '/bootstrap']);
+      const b = Date.now();
+      return this.requestAny([`/bootstrap.php?_=${b}`, `/bootstrap?_=${b}`, '/bootstrap.php', '/bootstrap']);
     },
-    async getChanges() {
-      return this.requestAny(['/changes.php', '/changes']);
+    async getChanges(since = 0) {
+      const b = Date.now();
+      const s = encodeURIComponent(String(Number(since) || 0));
+      return this.requestAny([
+        `/changes.php?since=${s}&_=${b}`,
+        `/changes?since=${s}&_=${b}`,
+        `/changes.php?since=${s}`,
+        `/changes?since=${s}`,
+      ]);
     },
     async login(username, password) {
       // Uma única rota: evita uma ida HTTP extra em hosts que não têm `/login`.
@@ -514,6 +524,27 @@ const Store = (() => {
       }
       return tasks[i];
     },
+    applyRemoteTasks(incoming) {
+      if (!Array.isArray(incoming) || !incoming.length) return 0;
+      let changed = 0;
+      for (const inc of incoming) {
+        const id = Number(inc?.id);
+        if (!Number.isFinite(id)) continue;
+        const i = tasks.findIndex(t => Number(t?.id) === id);
+        if (i === -1) {
+          tasks.push(inc);
+          changed++;
+        } else {
+          Object.assign(tasks[i], inc);
+          changed++;
+        }
+      }
+      if (changed) {
+        nextTaskId = tasks.reduce((max, t) => Math.max(max, Number(t.id) || 0), 0) + 1;
+        persistSnapshot();
+      }
+      return changed;
+    },
     findTask:        (id)    => tasks.find(t => t.id === id),
 
     // OpTasks
@@ -552,6 +583,27 @@ const Store = (() => {
         syncUpOpTask(opTasks[i]);
       }
       return opTasks[i];
+    },
+    applyRemoteOpTasks(incoming) {
+      if (!Array.isArray(incoming) || !incoming.length) return 0;
+      let changed = 0;
+      for (const inc of incoming) {
+        const id = Number(inc?.id);
+        if (!Number.isFinite(id)) continue;
+        const i = opTasks.findIndex(t => Number(t?.id) === id);
+        if (i === -1) {
+          opTasks.push(inc);
+          changed++;
+        } else {
+          Object.assign(opTasks[i], inc);
+          changed++;
+        }
+      }
+      if (changed) {
+        nextOpTaskId = opTasks.reduce((max, t) => Math.max(max, Number(t.id) || 0), 0) + 1;
+        persistSnapshot();
+      }
+      return changed;
     },
     removeOpTask: (id, options = {}) => {
       const cascade = Boolean(options.cascade);
@@ -2366,18 +2418,24 @@ const UI = {
   /* ── Dashboard Stats ────────────────────────────────────── */
   renderDashboardStats() {
     const counts = TaskService.getCounts();
-    document.getElementById('count-pending').textContent  = counts.pending;
-    document.getElementById('count-progress').textContent = counts.progress;
-    document.getElementById('count-done').textContent     = counts.done;
-    document.getElementById('count-late').textContent     = counts.late;
-    document.getElementById('sub-pending').textContent    = `${counts.total} total`;
-    document.getElementById('sub-progress').textContent   = counts.progress ? 'Em execução' : 'Nenhuma ativa';
-    document.getElementById('sub-done').textContent       = counts.done    ? 'Finalizadas'  : 'Nenhuma ainda';
-    document.getElementById('sub-late').textContent       = counts.late    ? 'Atenção necessária' : 'Tudo em dia';
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(value);
+    };
+    setText('count-pending', counts.pending);
+    setText('count-progress', counts.progress);
+    setText('count-done', counts.done);
+    setText('count-late', counts.late);
+    setText('sub-pending', `${counts.total} total`);
+    setText('sub-progress', counts.progress ? 'Em execução' : 'Nenhuma ativa');
+    setText('sub-done', counts.done ? 'Finalizadas' : 'Nenhuma ainda');
+    setText('sub-late', counts.late ? 'Atenção necessária' : 'Tudo em dia');
 
     const badgeLate = document.getElementById('badge-late');
-    badgeLate.textContent   = counts.late;
-    badgeLate.style.display = counts.late ? 'inline' : 'none';
+    if (badgeLate) {
+      badgeLate.textContent = String(counts.late);
+      badgeLate.style.display = counts.late ? 'inline' : 'none';
+    }
   },
 
   /* ── Dashboard Task Table ───────────────────────────────── */
@@ -3978,7 +4036,7 @@ const Controllers = {
         document.getElementById(id)?.addEventListener('click', () => ModalService.close('taskModal'))
       );
 
-      document.getElementById('refreshBtn').addEventListener('click', () => UI.renderDashboard());
+      // refreshBtn agora e gerenciado por manualRefresh() em initApp()
     },
   },
 
@@ -6537,6 +6595,7 @@ async function initApp() {
   // - Em vez de baixar tudo toda hora, faz um GET leve (/changes.php) e só faz bootstrap quando houve mudança.
   // - O bootstrap de 25s fica como fallback caso algum proxy/cache atrapalhe ou o changes falhe.
   let lastRemoteSig = '';
+  let lastSince = 0; // epoch seconds (referência do servidor / updated_at max)
   const changesSig = (payload) => {
     if (!payload || typeof payload !== 'object') return '';
     const t = Number(payload.tasks) || 0;
@@ -6545,32 +6604,74 @@ async function initApp() {
     const g = Number(payload.config) || 0;
     return `${t}|${o}|${c}|${g}`;
   };
+  let syncInFlight = false;
   const quickSyncTick = async () => {
     if (!ApiService.enabled()) return;
     if (!Controllers?.auth?._isAuthenticated?.()) return;
-    const ch = await ApiService.getChanges();
-    if (!ch || ch.ok !== true) return;
-    const sig = changesSig(ch);
-    if (!sig || sig === lastRemoteSig) return;
-    lastRemoteSig = sig;
-    const updated = await bootstrapWithTimeout(6000);
-    if (!updated) return;
-    UI.renderDashboard();
-    UI.refreshOperationalUi();
-    UI.renderCalendarPage();
-    UI.renderReportsPage();
+    if (syncInFlight) return;
+    syncInFlight = true;
+    try {
+      const ch = await ApiService.getChanges(lastSince);
+      if (!ch || ch.ok !== true) {
+        // Se /changes falhar (cache/proxy/endpoint ausente), faz bootstrap direto com timeout maior.
+        const updated = await bootstrapWithTimeout(15000);
+        if (!updated) return;
+        void seedRemoteSigIfPossible();
+        UI.renderDashboard();
+        UI.refreshOperationalUi();
+        UI.renderCalendarPage();
+        UI.renderReportsPage();
+        return;
+      }
+
+      // Usa o maior updated_at das tabelas (mais confiável que serverTime para não perder updates no mesmo segundo).
+      if (Number(ch.nextSince) > 0) lastSince = Number(ch.nextSince);
+      else if (Number(ch.serverTime) > 0) lastSince = Number(ch.serverTime);
+
+      const changedTasks = Array.isArray(ch.changedTasks) ? ch.changedTasks : [];
+      const changedOp = Array.isArray(ch.changedOpTasks) ? ch.changedOpTasks : [];
+
+      // FIX: calcula e persiste sig ANTES de qualquer early-return,
+      // evitando re-deteccao da mesma mudanca no proximo tick.
+      const sig = changesSig(ch);
+      const sigChanged = sig && sig !== lastRemoteSig;
+      if (sig) lastRemoteSig = sig;
+
+      const changedCount = Store.applyRemoteTasks(changedTasks) + Store.applyRemoteOpTasks(changedOp);
+      if (changedCount) {
+        UI.renderDashboard();
+        UI.refreshOperationalUi();
+        UI.renderCalendarPage();
+        UI.renderReportsPage();
+      }
+
+      // Se o servidor acusar mudanca mas nao vier diff (ex.: config/calendario),
+      // faz bootstrap completo como fallback.
+      if (sigChanged && !changedTasks.length && !changedOp.length) {
+        const updated = await bootstrapWithTimeout(15000);
+        if (!updated) return;
+        UI.renderDashboard();
+        UI.refreshOperationalUi();
+        UI.renderCalendarPage();
+        UI.renderReportsPage();
+      }
+    } finally {
+      syncInFlight = false;
+    }
   };
 
   const seedRemoteSigIfPossible = async () => {
     if (!ApiService.enabled()) return;
     if (!Controllers?.auth?._isAuthenticated?.()) return;
-    const ch = await ApiService.getChanges();
+    const ch = await ApiService.getChanges(0);
     if (!ch || ch.ok !== true) return;
     const sig = changesSig(ch);
     if (sig) lastRemoteSig = sig;
+    if (Number(ch.nextSince) > 0) lastSince = Number(ch.nextSince);
+    else if (Number(ch.serverTime) > 0) lastSince = Number(ch.serverTime);
   };
 
-  setInterval(() => { void quickSyncTick(); }, 4000);
+  setInterval(() => { void quickSyncTick(); }, 1000);
   setInterval(async () => {
     const updated = await bootstrapWithTimeout(6000);
     if (!updated) return;
@@ -6582,6 +6683,43 @@ async function initApp() {
   }, 25000);
 
   void seedRemoteSigIfPossible();
+
+  /* -- Refresh manual: bootstrap + re-render + spin no botao -- */
+  const manualRefresh = async (btnId) => {
+    const btn = btnId ? document.getElementById(btnId) : null;
+    const svg = btn?.querySelector('svg');
+    if (svg) svg.style.transition = 'transform 0.6s linear';
+    let angle = 0;
+    const spin = btn ? setInterval(() => {
+      angle += 60;
+      if (svg) svg.style.transform = `rotate(${angle}deg)`;
+    }, 100) : null;
+    const stop = () => {
+      if (spin) clearInterval(spin);
+      if (svg) { svg.style.transform = 'rotate(360deg)'; setTimeout(() => { svg.style.transition = ''; svg.style.transform = ''; }, 300); }
+    };
+    try {
+      const updated = await bootstrapWithTimeout(12000);
+      if (updated) {
+        void seedRemoteSigIfPossible();
+        UI.renderDashboard();
+        UI.refreshOperationalUi();
+        UI.renderCalendarPage();
+        UI.renderReportsPage();
+        ToastService.show('Dados atualizados', 'success');
+      } else {
+        ToastService.show('Sem conexão com a API', 'error');
+      }
+    } finally {
+      stop();
+    }
+  };
+
+  // Wiring dos botões de refresh em todas as páginas
+  document.getElementById('refreshBtn')?.addEventListener('click', () => manualRefresh('refreshBtn'));
+  document.getElementById('refreshOpBtn')?.addEventListener('click', () => manualRefresh('refreshOpBtn'));
+  document.getElementById('refreshAtdBtn')?.addEventListener('click', () => manualRefresh('refreshAtdBtn'));
+  document.getElementById('refreshCalendarBtn')?.addEventListener('click', () => manualRefresh('refreshCalendarBtn'));
 
   UI.restoreLastPageIfAuthed();
   if (Controllers.auth._isAuthenticated() && Store.currentPage !== 'chat') {

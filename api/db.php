@@ -68,6 +68,10 @@ function jsonResponse(array $payload, int $status = 200): void
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
+    // HostGator/cPanel pode ter cache/proxy agressivo: nunca cachear respostas JSON da API.
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET,POST,DELETE,OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type');
