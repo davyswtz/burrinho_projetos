@@ -279,6 +279,26 @@ body.auth-locked .login-screen { display: flex; }
 .sidebar.collapsed .collapse-btn svg { transform: rotate(180deg); }
 
 .nav { flex: 1; padding: 10px 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.nav-pages-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+}
+/* Arrastar para reordenar itens do menu (HTML5 DnD) */
+.sidebar .nav-pages-stack .nav-item[data-page] {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sidebar .nav-pages-stack .nav-item[data-page]:active {
+  cursor: grabbing;
+}
+.sidebar .nav-pages-stack .nav-item[data-page].nav-item-dragging {
+  cursor: grabbing;
+  opacity: 0.88;
+}
 .nav-section-label {
   font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
   color: var(--white4); padding: 10px 10px 4px; white-space: nowrap;
@@ -731,6 +751,57 @@ tbody td:first-child { color: var(--white); font-weight: 500; }
   width: 11px;
   height: 11px;
 }
+
+/* Alterar status (menu com todos os status possíveis da tarefa operacional) */
+.op-status-picker-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  color: var(--white4);
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+.op-status-picker-btn:hover {
+  color: var(--green);
+  border-color: var(--green-dim);
+  background: rgba(45, 255, 110, 0.08);
+}
+.op-status-picker-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--green-dim);
+}
+.op-status-picker-btn--sm {
+  width: 20px;
+  height: 20px;
+}
+.op-status-picker-btn--sm svg {
+  width: 11px;
+  height: 11px;
+}
+.op-global-status-picker .atd-status-dropdown-item.is-current-op-status {
+  color: var(--green);
+  font-weight: 600;
+}
+.dashboard-status-with-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.atd-modal-children-status-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .modal-head-main {
   display: flex;
   align-items: center;
@@ -1029,6 +1100,12 @@ tbody td:first-child { color: var(--white); font-weight: 500; }
   justify-content: space-between;
   gap: 8px;
 }
+.calendar-item-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
 .calendar-item-title {
   color: var(--white2);
   font-size: 12.5px;
@@ -1297,6 +1374,41 @@ tbody td:first-child { color: var(--white); font-weight: 500; }
   gap: 10px;
 }
 
+/* Páginas placeholder (em construção) — correção atenuação, troca etiqueta, Q. potência */
+.app-placeholder-page .page-placeholder-panel {
+  max-width: 42rem;
+  margin: 0 auto;
+}
+.app-placeholder-page .page-placeholder-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--white4);
+  font-family: var(--font-sans, system-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+}
+.app-placeholder-page .page-placeholder-body {
+  padding: 22px 20px 28px;
+  border-top: 1px solid var(--border);
+}
+.app-placeholder-page .page-placeholder-lead {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--accent);
+}
+.app-placeholder-page .page-placeholder-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--white3);
+}
+.app-placeholder-page .page-placeholder-text strong {
+  color: var(--white2);
+  font-weight: 650;
+}
+
 .tasks-tabs {
   display: flex; background: var(--black3); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 4px; gap: 4px;
@@ -1412,8 +1524,80 @@ tbody td:first-child { color: var(--white); font-weight: 500; }
 }
 .kanban-col-header {
   padding: 12px 16px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: 10px;
   background: var(--black4);
+}
+.kanban-col-header .kanban-col-title {
+  flex: 1;
+  min-width: 0;
+}
+.kanban-col-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.06) 0%, var(--black3) 45%, var(--black2) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 2px rgba(0, 0, 0, 0.25);
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    color 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.kanban-col-toggle:hover {
+  color: var(--accent);
+  border-color: rgba(45, 255, 110, 0.35);
+  background: linear-gradient(165deg, rgba(45, 255, 110, 0.12) 0%, var(--black3) 50%, var(--black2) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+.kanban-col-toggle:active {
+  transform: scale(0.94);
+}
+.kanban-col-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kanban-col-toggle-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  transition: transform 0.45s cubic-bezier(0.34, 1.2, 0.64, 1);
+  will-change: transform;
+}
+.kanban-col-toggle-svg {
+  display: block;
+  opacity: 0.95;
+  transition: opacity 0.3s ease;
+}
+.kanban-col-toggle:hover .kanban-col-toggle-svg {
+  opacity: 1;
+}
+.kanban-col--collapsed .kanban-col-toggle-chevron {
+  transform: rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .kanban-col-toggle,
+  .kanban-col-toggle-chevron,
+  .kanban-col-toggle-svg {
+    transition-duration: 0.01ms !important;
+  }
+}
+.kanban-col--collapsed .kanban-cards,
+.kanban-col--collapsed .kanban-col-add {
+  display: none;
 }
 .kanban-col-title {
   font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
@@ -2364,7 +2548,7 @@ tbody td:first-child { color: var(--white); font-weight: 500; }
 
 /* Status action buttons in kanban card */
 .kanban-card-actions {
-  display: none; gap: 4px; margin-top: 8px; flex-wrap: wrap;
+  display: none; gap: 4px; margin-top: 8px; flex-wrap: wrap; align-items: center;
 }
 .kanban-card:hover .kanban-card-actions { display: flex; }
 .status-action-btn {

@@ -1085,7 +1085,7 @@ const Utils = {
   /**
    * Texto a copiar / exibir como referência da tarefa operacional.
    * Atendimento ao cliente: taskCode ou código sintético (região + ATD + nº), não o protocolo do formulário.
-   * Otimização de rede: ID numérico da tarefa; depois taskCode / código sintético — nunca o protocolo do formulário.
+   * Otimização de rede: taskCode (ex.: VL-NET-0001) ou código sintético com região + NET + nº — nunca protocolo nem só o ID do banco.
    * Demais categorias: protocolo do formulário, senão taskCode, senão código sintético.
    */
   opTaskDisplayRef(task) {
@@ -1100,8 +1100,6 @@ const Utils = {
       return '';
     }
     if (task.categoria === 'otimizacao-rede') {
-      const nid = Number(task.id);
-      if (Number.isFinite(nid) && nid > 0) return String(nid);
       if (code) return code;
       const synthetic = this.syntheticOpTaskCode(task);
       if (synthetic) return synthetic;
@@ -1126,6 +1124,17 @@ const Utils = {
     const cls = ['task-copy-id-btn', extraClass].filter(Boolean).join(' ');
     const a = this.escapeHtmlAttr(code);
     return `<button type="button" class="${cls}" draggable="false" data-copy-protocol="${a}" title="Copiar identificador (${code})" aria-label="Copiar identificador ${code}">${this.TASK_COPY_ID_SVG}</button>`;
+  },
+
+  /** Ícone de lista — abre menu com todos os status da tarefa operacional. */
+  OP_STATUS_PICKER_SVG:
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg>',
+
+  opTaskStatusPickerButtonHtml(opId, extraClass = '') {
+    const id = Number(opId);
+    if (!Number.isFinite(id) || id <= 0) return '';
+    const cls = ['op-status-picker-btn', extraClass].filter(Boolean).join(' ');
+    return `<button type="button" class="${cls}" draggable="false" data-op-status-picker="${id}" title="Alterar status" aria-label="Alterar status">${this.OP_STATUS_PICKER_SVG}</button>`;
   },
 
   async copyTextToClipboard(text) {
@@ -1323,7 +1332,11 @@ const WebhookService = {
     const B = (lines) => this._rompimentoBoldLines(lines);
     const tecnico = this._resolveTechnicianDisplay(task);
     const enviadoPor = String(task?.assinadaPor || '').trim() || '—';
-    const taskId = String(task.taskCode || `NET-${String(task.id || '').padStart(4, '0')}`).trim();
+    const code = String(task.taskCode || '').trim();
+    const synthetic = Utils.syntheticOpTaskCode(task);
+    const taskId = String(
+      code || synthetic || `NET-${String(task.id || '').padStart(4, '0')}`,
+    ).trim();
     const coords = String(task.coordenadas || '').trim() || '—';
     const endereco = String(task.localizacaoTexto || '').trim() || '—';
     const regiao = String(task.regiao || '').trim() || '—';
@@ -2119,6 +2132,24 @@ const OpTaskService = {
     }
   },
 
+  /** Status exibidos no menu «alterar status» (fora do fluxo Cemig). */
+  _stdOpStatusPicklist() {
+    return ['Backlog', 'A iniciar', 'Criada', 'Agendado', 'Pendente', 'Em andamento', 'Concluída', 'Finalizada', 'Finalizado', 'Cancelada'];
+  },
+
+  /**
+   * Lista ordenada de status que o usuário pode escolher para a tarefa operacional.
+   * @param {object} task
+   * @returns {string[]}
+   */
+  getStatusPicklist(task) {
+    if (!task || typeof task !== 'object') return [];
+    if (task.categoria === 'certificacao-cemig') {
+      return this._cemigColumns.map(c => c.status);
+    }
+    return this._stdOpStatusPicklist();
+  },
+
   /**
    * Retorna tarefas operacionais filtradas por categoria e busca.
    * @param {string} category
@@ -2236,6 +2267,7 @@ const CalendarService = {
       regiao: task.regiao || '',
       removable: false,
       copyRef: Utils.unifiedTaskDisplayRef(task),
+      isOpTask: task.source === 'operacional',
     };
   },
 
@@ -2499,6 +2531,121 @@ const ReportsService = {
   },
 };
 
+/** Ordem dos itens do menu lateral (persistência local). */
+const SIDEBAR_NAV_ORDER_KEY = 'planner.sidebar.navOrder.v1';
+
+const SidebarNavOrder = {
+  /** Evita `click` disparar navegação logo após um drop de reordenação. */
+  lastDropAt: 0,
+
+  mergeOrder(saved, domIds) {
+    const domSet = new Set(domIds);
+    const out = [];
+    const used = new Set();
+    if (Array.isArray(saved) && saved.length) {
+      for (const id of saved) {
+        if (typeof id === 'string' && domSet.has(id) && !used.has(id)) {
+          out.push(id);
+          used.add(id);
+        }
+      }
+    }
+    for (const id of domIds) {
+      if (!used.has(id)) {
+        out.push(id);
+        used.add(id);
+      }
+    }
+    return out;
+  },
+
+  persistFromDom(wrap) {
+    const ids = [...wrap.querySelectorAll('.nav-item[data-page]')].map((b) => b.dataset.page).filter(Boolean);
+    try {
+      localStorage.setItem(SIDEBAR_NAV_ORDER_KEY, JSON.stringify(ids));
+    } catch {
+      /* ignore */
+    }
+  },
+
+  apply() {
+    const wrap = document.getElementById('sidebarNavPages');
+    if (!wrap) return;
+    let saved = null;
+    try {
+      const raw = localStorage.getItem(SIDEBAR_NAV_ORDER_KEY);
+      if (raw) saved = JSON.parse(raw);
+    } catch {
+      saved = null;
+    }
+    const domIds = [...wrap.querySelectorAll('.nav-item[data-page]')].map((b) => b.dataset.page).filter(Boolean);
+    const merged = this.mergeOrder(Array.isArray(saved) ? saved : null, domIds);
+    const byId = new Map(
+      [...wrap.querySelectorAll('.nav-item[data-page]')].map((btn) => [btn.dataset.page, btn]),
+    );
+    for (const id of merged) {
+      const el = byId.get(id);
+      if (el) wrap.appendChild(el);
+    }
+    this.persistFromDom(wrap);
+  },
+
+  /** Arrastar e soltar na própria barra lateral para reordenar (persiste em localStorage). */
+  initDrag() {
+    const wrap = document.getElementById('sidebarNavPages');
+    if (!wrap || wrap.dataset.navDragBound === '1') return;
+    wrap.dataset.navDragBound = '1';
+
+    wrap.querySelectorAll('.nav-item[data-page]').forEach((btn) => {
+      btn.setAttribute('draggable', 'true');
+    });
+
+    let dragged = null;
+
+    wrap.addEventListener('dragstart', (e) => {
+      const btn = e.target.closest?.('.nav-item[data-page]');
+      if (!btn || !wrap.contains(btn)) return;
+      dragged = btn;
+      btn.classList.add('nav-item-dragging');
+      try {
+        e.dataTransfer.setData('text/plain', btn.dataset.page || '');
+        e.dataTransfer.effectAllowed = 'move';
+      } catch {
+        /* ignore */
+      }
+    });
+
+    wrap.addEventListener('dragend', (e) => {
+      const btn = e.target.closest?.('.nav-item[data-page]');
+      if (btn) btn.classList.remove('nav-item-dragging');
+      dragged = null;
+    });
+
+    wrap.addEventListener('dragover', (e) => {
+      if (!dragged) return;
+      e.preventDefault();
+      try {
+        e.dataTransfer.dropEffect = 'move';
+      } catch {
+        /* ignore */
+      }
+    });
+
+    wrap.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!dragged) return;
+      const target = e.target.closest?.('.nav-item[data-page]');
+      if (!target || !wrap.contains(target) || target === dragged) return;
+      const rect = target.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) wrap.insertBefore(dragged, target);
+      else wrap.insertBefore(dragged, target.nextSibling);
+      SidebarNavOrder.persistFromDom(wrap);
+      SidebarNavOrder.lastDropAt = Date.now();
+    });
+  },
+};
+
 
 /* ─────────────────────────────────────────────────────────────
    UI RENDERERS — Funções de renderização da interface
@@ -2518,6 +2665,51 @@ const UI = {
   _normalizeAtdStatus(status) {
     if (status === 'Criada' || status === 'A iniciar') return 'Backlog';
     return status;
+  },
+
+  /** Colunas do kanban recolhidas por chave `categoriaOuPagina|status` (persistido na aba). */
+  _KANBAN_COLLAPSED_SS_KEY: 'planner.kanban.collapsedCols.v1',
+  _kanbanCollapsedKeys: null,
+  _ensureKanbanCollapsedKeys() {
+    if (this._kanbanCollapsedKeys instanceof Set) return this._kanbanCollapsedKeys;
+    try {
+      const raw = sessionStorage.getItem(this._KANBAN_COLLAPSED_SS_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      this._kanbanCollapsedKeys = new Set(Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : []);
+    } catch {
+      this._kanbanCollapsedKeys = new Set();
+    }
+    return this._kanbanCollapsedKeys;
+  },
+  _persistKanbanCollapsedKeys() {
+    try {
+      sessionStorage.setItem(this._KANBAN_COLLAPSED_SS_KEY, JSON.stringify([...this._ensureKanbanCollapsedKeys()]));
+    } catch {
+      /* ignore */
+    }
+  },
+  _isKanbanCollapsedKey(key) {
+    return this._ensureKanbanCollapsedKeys().has(String(key || ''));
+  },
+  /** @returns {boolean} coluna ficou recolhida após o clique */
+  _toggleKanbanCollapsedKey(key) {
+    const k = String(key || '');
+    if (!k) return false;
+    const s = this._ensureKanbanCollapsedKeys();
+    if (s.has(k)) s.delete(k);
+    else s.add(k);
+    this._persistKanbanCollapsedKeys();
+    return s.has(k);
+  },
+  _applyKanbanColToggleUi(btn, nowCollapsed) {
+    if (!btn) return;
+    const colLabel = btn.getAttribute('data-kanban-col-label') || 'coluna';
+    const col = btn.closest('.kanban-col');
+    if (col) col.classList.toggle('kanban-col--collapsed', nowCollapsed);
+    btn.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
+    const verb = nowCollapsed ? 'Expandir' : 'Recolher';
+    btn.title = `${verb} tarefas deste status`;
+    btn.setAttribute('aria-label', `${verb} coluna ${colLabel}`);
   },
   /* ── Helpers de badge ───────────────────────────────────── */
   _statusBadgeMap: {
@@ -2647,7 +2839,7 @@ const UI = {
             </div>
           </td>
           <td class="date-cell ${isLate ? 'date-late' : ''}">${Utils.formatDate(t.prazo)}</td>
-          <td>${this.statusBadge(t.effectiveStatus)}</td>
+          <td><span class="dashboard-status-with-picker">${this.statusBadge(t.effectiveStatus)}${t.source === 'operacional' ? Utils.opTaskStatusPickerButtonHtml(t.id, 'op-status-picker-btn--sm') : ''}</span></td>
           <td><span class="dashboard-badges-cell">${[this.regionBadge(t.regiao), this.priorityBadge(t.prioridade || 'Média')].filter(Boolean).join('')}</span> <span style="margin-left:6px;color:var(--white4);font-size:10px;font-family:var(--font-mono)">· ${t.sourceLabel}</span></td>
         </tr>
       `;
@@ -2742,6 +2934,8 @@ const UI = {
 
     board.innerHTML = columns.map(col => {
       const colTasks = tasks.filter(t => kanbanColKey(t) === col.status);
+      const collapseKey = `${category}|${col.status}`;
+      const colCollapsed = this._isKanbanCollapsedKey(collapseKey);
 
       const cards = colTasks.length
         ? colTasks
@@ -2758,6 +2952,7 @@ const UI = {
             const actionBtns = nextStatuses.map(ns =>
               `<button class="status-action-btn ${statusActionClass[ns] || 'cemig-advance'}" data-op-id="${Utils.escapeHtml(t.id)}" data-to-status="${Utils.escapeHtml(ns)}">${Utils.escapeHtml(statusLabels[ns])}</button>`
             ).join('');
+            const statusPickerBtn = Utils.opTaskStatusPickerButtonHtml(t.id, 'op-status-picker-btn--sm');
             const assinatura = String(t.assinadaPor || '').trim();
             const sigHtml = assinatura ? `<div class="kanban-card-signature">✍ ${Utils.escapeHtml(assinatura)}</div>` : '';
             const badgeParts = [this.regionBadge(t.regiao), this.priorityBadge(t.prioridade || 'Média')].filter(Boolean);
@@ -2766,6 +2961,7 @@ const UI = {
               ? `<div class="subtask-list">${childTasks.map(c => `
                    <div class="subtask-item">
                      ${Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(c), 'task-copy-id-btn--sm')}
+                     ${Utils.opTaskStatusPickerButtonHtml(c.id, 'op-status-picker-btn--sm')}
                      <span>${Utils.escapeHtml(c.taskCode || '')} · ${Utils.escapeHtml(c.titulo)}</span>
                      <button type="button" data-open-subtask="${Utils.escapeHtml(c.id)}">${Utils.escapeHtml(c.status)}</button>
                    </div>
@@ -2789,7 +2985,7 @@ const UI = {
                   <div class="kanban-card-date ${isLate ? 'late' : ''}">${Utils.formatDate(t.prazo)}</div>
                 </div>
                 ${sigHtml}
-                <div class="kanban-card-actions">${actionBtns}</div>
+                <div class="kanban-card-actions">${actionBtns}${statusPickerBtn}</div>
                 ${childHtml}
               </article>
             `;
@@ -2797,8 +2993,11 @@ const UI = {
         : `<div class="kanban-empty">Nenhuma tarefa</div>`;
 
       return `
-        <div class="kanban-col ${col.key}" role="group" aria-label="Coluna ${col.label}">
+        <div class="kanban-col ${col.key}${colCollapsed ? ' kanban-col--collapsed' : ''}" role="group" aria-label="Coluna ${col.label}">
           <div class="kanban-col-header">
+            <button type="button" class="kanban-col-toggle" data-kanban-collapse="${Utils.escapeHtmlAttr(collapseKey)}" data-kanban-col-label="${Utils.escapeHtmlAttr(col.label)}" aria-expanded="${colCollapsed ? 'false' : 'true'}" title="${colCollapsed ? 'Expandir' : 'Recolher'} tarefas deste status" aria-label="${colCollapsed ? 'Expandir' : 'Recolher'} coluna ${Utils.escapeHtmlAttr(col.label)}">
+              <span class="kanban-col-toggle-chevron" aria-hidden="true"><svg class="kanban-col-toggle-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </button>
             <span class="kanban-col-title">${col.label}</span>
             <span class="kanban-col-count">${colTasks.length}</span>
           </div>
@@ -2815,6 +3014,16 @@ const UI = {
     board.onclick = (e) => {
       const target = e.target;
       if (!target) return;
+
+      const colToggle = target.closest?.('.kanban-col-toggle');
+      if (colToggle && board.contains(colToggle)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const key = colToggle.getAttribute('data-kanban-collapse') || '';
+        const nowCollapsed = this._toggleKanbanCollapsedKey(key);
+        this._applyKanbanColToggleUi(colToggle, nowCollapsed);
+        return;
+      }
 
       const statusBtn = target.closest?.('.status-action-btn');
       if (statusBtn && board.contains(statusBtn)) {
@@ -2930,6 +3139,7 @@ const UI = {
         source: t.sourceLabel,
         copyRef: Utils.unifiedTaskDisplayRef(t),
         kind: 'task',
+        opId: t.source === 'operacional' ? t.id : null,
       }));
 
     const noteItems = Store.getCalendarNotes()
@@ -2940,6 +3150,7 @@ const UI = {
         source: 'Anotação',
         copyRef: '',
         kind: 'note',
+        opId: null,
       }));
 
     const agenda = [...taskItems, ...noteItems]
@@ -2954,6 +3165,7 @@ const UI = {
           text: item.text,
           time: `${Utils.formatDate(item.date)} · ${item.source}`,
           copyRef: item.copyRef,
+          opId: item.opId || null,
         };
       });
 
@@ -2968,6 +3180,7 @@ const UI = {
         <div class="agenda-day">${a.day}</div>
         <div class="agenda-item-body">
           ${Utils.taskCopyProtocolButtonHtml(a.copyRef, 'task-copy-id-btn--sm')}
+          ${a.opId ? Utils.opTaskStatusPickerButtonHtml(a.opId, 'op-status-picker-btn--sm') : ''}
           <div>
             <div class="agenda-desc">${a.text}</div>
             <div class="agenda-time">${a.time}</div>
@@ -3049,6 +3262,10 @@ const UI = {
         .filter(Boolean)
         .join('');
       const copyBtn = Utils.taskCopyProtocolButtonHtml(item.copyRef, 'task-copy-id-btn--calendar');
+      const topRight = [
+        item.isOpTask ? Utils.opTaskStatusPickerButtonHtml(item.id, 'op-status-picker-btn--sm') : '',
+        item.removable ? `<button class="calendar-remove-btn" data-remove-note="${item.id}" title="Remover anotação" aria-label="Remover anotação">Remover</button>` : '',
+      ].filter(Boolean).join('');
       return `
       <article class="calendar-item">
         <div class="calendar-item-top">
@@ -3056,7 +3273,7 @@ const UI = {
             ${copyBtn}
             <span class="calendar-item-title">${item.title}</span>
           </div>
-          ${item.removable ? `<button class="calendar-remove-btn" data-remove-note="${item.id}" title="Remover anotação" aria-label="Remover anotação">Remover</button>` : ''}
+          ${topRight ? `<div class="calendar-item-top-actions">${topRight}</div>` : ''}
         </div>
         <div class="calendar-item-meta">${item.sourceLabel}</div>
         ${badges ? `<div class="calendar-item-badges">${badges}</div>` : ''}
@@ -3154,7 +3371,7 @@ const UI = {
     lateTbody.innerHTML = lateRows.length
       ? lateRows.map(row => `
           <tr>
-            <td><span class="report-late-title-cell">${Utils.taskCopyProtocolButtonHtml(Utils.unifiedTaskDisplayRef(row), 'task-copy-id-btn--sm')}<span>${row.titulo}</span></span></td>
+            <td><span class="report-late-title-cell">${Utils.taskCopyProtocolButtonHtml(Utils.unifiedTaskDisplayRef(row), 'task-copy-id-btn--sm')}${row.source === 'operacional' ? Utils.opTaskStatusPickerButtonHtml(row.id, 'op-status-picker-btn--sm') : ''}<span>${row.titulo}</span></span></td>
             <td>${row.sourceText}</td>
             <td>${row.responsavel}</td>
             <td class="date-cell date-late">${Utils.formatDate(row.prazo)}</td>
@@ -3210,6 +3427,9 @@ const UI = {
       'otimizacao-rede': { title: 'Otimização de Rede', crumb: 'Projetos de rede' },
       'certificacao-cemig': { title: 'Certificação Cemig', crumb: 'Projetos de rede' },
       atendimento: { title: 'Atendimento ao cliente', crumb: 'Central de atendimento' },
+      'correcao-atenuacao': { title: 'Correção de atenuação', crumb: 'Em construção' },
+      'troca-etiqueta': { title: 'Troca de etiqueta', crumb: 'Em construção' },
+      'qualidade-potencia': { title: 'Qualidade de potência', crumb: 'Em construção' },
       calendario: { title: 'Calendário', crumb: 'Agenda' },
       relatorio: { title: 'Relatório', crumb: 'Rompimentos' },
       config: { title: 'Configurações', crumb: 'Sistema' },
@@ -3259,6 +3479,9 @@ const UI = {
       'otimizacao-rede',
       'certificacao-cemig',
       'atendimento',
+      'correcao-atenuacao',
+      'troca-etiqueta',
+      'qualidade-potencia',
       'calendario',
       'relatorio',
       'config',
@@ -3337,6 +3560,8 @@ const UI = {
 
     const boardHtml = columns.map((col) => {
       const colParents = parents.filter(p => atdParentKanbanColKey(p) === col.status);
+      const collapseKey = `atendimento|${col.status}`;
+      const colCollapsed = this._isKanbanCollapsedKey(collapseKey);
       const cards = colParents.length
         ? colParents.map((parent) => {
           const isLate = parent.prazo && parent.prazo < tod && !doneForLate.includes(parent.status);
@@ -3350,6 +3575,7 @@ const UI = {
           const actionBtns = nextStatuses.map((ns) =>
             `<button type="button" class="status-action-btn ${statusActionClass[ns] || 'to-andamento'}" data-op-id="${parent.id}" data-to-status="${Utils.escapeHtmlAttr(ns)}">${statusLabels[ns] || ns}</button>`,
           ).join('');
+          const atdStatusPickerBtn = Utils.opTaskStatusPickerButtonHtml(parent.id, 'op-status-picker-btn--sm');
           const titleEsc = Utils.escapeHtml(parent.nomeCliente || parent.titulo || '(Sem título)');
           const subsCount = kids.length;
           const assinatura = String(parent.assinadaPor || '').trim();
@@ -3380,7 +3606,7 @@ const UI = {
                 </div>
                 ${osCountsHtml}
                 ${sigHtml}
-                <div class="kanban-card-actions">${actionBtns}</div>
+                <div class="kanban-card-actions">${actionBtns}${atdStatusPickerBtn}</div>
                 <div class="atd-kanban-card-foot">
                   <button type="button" class="atd-book-ico" data-atd-add-os="${parent.id}" title="Adicionar ordem de serviço" aria-label="Adicionar ordem de serviço">+</button>
                   <button type="button" class="atd-book-ico" data-atd-edit-parent="${parent.id}" title="Editar protocolo" aria-label="Editar protocolo">✎</button>
@@ -3392,8 +3618,11 @@ const UI = {
         : '<div class="kanban-empty">Nenhuma lista neste estágio</div>';
 
       return `
-        <div class="kanban-col ${col.key}" role="group" aria-label="Coluna ${col.label}">
+        <div class="kanban-col ${col.key}${colCollapsed ? ' kanban-col--collapsed' : ''}" role="group" aria-label="Coluna ${col.label}">
           <div class="kanban-col-header">
+            <button type="button" class="kanban-col-toggle" data-kanban-collapse="${Utils.escapeHtmlAttr(collapseKey)}" data-kanban-col-label="${Utils.escapeHtmlAttr(col.label)}" aria-expanded="${colCollapsed ? 'false' : 'true'}" title="${colCollapsed ? 'Expandir' : 'Recolher'} tarefas deste status" aria-label="${colCollapsed ? 'Expandir' : 'Recolher'} coluna ${Utils.escapeHtmlAttr(col.label)}">
+              <span class="kanban-col-toggle-chevron" aria-hidden="true"><svg class="kanban-col-toggle-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </button>
             <span class="kanban-col-title">${col.label}</span>
             <span class="kanban-col-count">${colParents.length}</span>
           </div>
@@ -3407,6 +3636,16 @@ const UI = {
     root.onclick = (e) => {
       const target = e.target;
       if (!target) return;
+
+      const colToggle = target.closest?.('.kanban-col-toggle');
+      if (colToggle && root.contains(colToggle)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const key = colToggle.getAttribute('data-kanban-collapse') || '';
+        const nowCollapsed = this._toggleKanbanCollapsedKey(key);
+        this._applyKanbanColToggleUi(colToggle, nowCollapsed);
+        return;
+      }
 
       const statusBtn = target.closest?.('.status-action-btn');
       if (statusBtn && root.contains(statusBtn)) {
@@ -3450,7 +3689,7 @@ const UI = {
 
       const card = target.closest?.('.kanban-card');
       if (!card || !root.contains(card)) return;
-      if (target.closest?.('.status-action-btn') || target.closest?.('.task-copy-id-btn')) return;
+      if (target.closest?.('.status-action-btn') || target.closest?.('.task-copy-id-btn') || target.closest?.('.op-status-picker-btn')) return;
       if (target.closest?.('.atd-kanban-card-foot')) return;
       Controllers.opTask.openEditModal(+card.dataset.opId);
     };
@@ -4153,8 +4392,11 @@ const Controllers = {
         });
       });
 
-      document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
-        btn.addEventListener('click', () => UI.navigateTo(btn.dataset.page));
+      document.querySelectorAll('.nav-item[data-page]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (Date.now() - SidebarNavOrder.lastDropAt < 420) return;
+          UI.navigateTo(btn.dataset.page);
+        });
       });
     },
   },
@@ -4269,6 +4511,7 @@ const Controllers = {
       hidden.value = match ? match.chatUserId : '';
     },
     _newTaskPreset: null,
+    _globalStatusPickerOpId: 0,
     _coordsLookupTimer: null,
     _setorCtoLookupTimer: null,
     _isAtendimentoCategory(category = Store.currentOpCategory) {
@@ -4782,6 +5025,62 @@ const Controllers = {
       dd.style.left = `${Math.round(left)}px`;
       dd.style.top = `${Math.round(top)}px`;
     },
+
+    _closeGlobalStatusPicker() {
+      const dd = document.getElementById('opGlobalStatusPicker');
+      if (dd) dd.hidden = true;
+      this._globalStatusPickerOpId = 0;
+    },
+
+    _positionGlobalStatusPicker(anchorEl) {
+      const dd = document.getElementById('opGlobalStatusPicker');
+      if (!dd || !anchorEl) return;
+      const rect = anchorEl.getBoundingClientRect();
+      const ddW = dd.offsetWidth || 200;
+      const ddH = dd.offsetHeight || 260;
+      let left = rect.right - ddW;
+      if (left < 8) left = Math.max(8, rect.left);
+      if (left + ddW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - ddW - 8);
+      let top = rect.bottom + 6;
+      if (top + ddH > window.innerHeight - 8) top = Math.max(8, rect.top - ddH - 6);
+      if (top < 8) top = 8;
+      dd.style.left = `${Math.round(left)}px`;
+      dd.style.top = `${Math.round(top)}px`;
+    },
+
+    openGlobalStatusPicker(anchorEl, opTaskId) {
+      const id = Number(opTaskId);
+      if (!Number.isFinite(id) || id <= 0) return;
+      const task = Store.findOpTask(id);
+      if (!task || !anchorEl) return;
+      const dd = document.getElementById('opGlobalStatusPicker');
+      const panel = document.getElementById('opGlobalStatusPickerPanel');
+      if (!dd || !panel) return;
+
+      const atdDd = document.getElementById('opAtdStatusDropdown');
+      if (atdDd && !atdDd.hidden) this._closeAtdStatusDropdown();
+
+      if (!dd.hidden && this._globalStatusPickerOpId === id) {
+        this._closeGlobalStatusPicker();
+        return;
+      }
+      this._closeGlobalStatusPicker();
+
+      const statuses = OpTaskService.getStatusPicklist(task);
+      const cur = String(task.status || '').trim();
+      panel.innerHTML = statuses.map(s => {
+        const isCur = s === cur;
+        return `<button type="button" class="atd-status-dropdown-item${isCur ? ' is-current-op-status' : ''}" role="menuitem" data-op-pick-status="${Utils.escapeHtmlAttr(s)}">${Utils.escapeHtml(s)}${isCur ? ' \u2713' : ''}</button>`;
+      }).join('');
+
+      this._globalStatusPickerOpId = id;
+      dd.hidden = false;
+      requestAnimationFrame(() => {
+        this._positionGlobalStatusPicker(anchorEl);
+        panel.querySelector('.atd-status-dropdown-item')?.focus?.();
+      });
+    },
+
     _resetAtdChildrenListExpand() {
       const wrap = document.getElementById('opAtdChildrenWrap');
       const btn = document.getElementById('opAtdChildrenExpandBtn');
@@ -4834,7 +5133,10 @@ const Controllers = {
               </div>
               <button type="button" class="atd-book-ico" data-atd-edit-child="${t.id}" title="Editar ordem de serviço" aria-label="Editar ordem de serviço">✎</button>
               ${Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(t), 'task-copy-id-btn--sm')}
-              <span class="atd-modal-children-status">${status}</span>
+              <span class="atd-modal-children-status-row">
+                ${Utils.opTaskStatusPickerButtonHtml(t.id, 'op-status-picker-btn--sm')}
+                <span class="atd-modal-children-status">${status}</span>
+              </span>
             </li>
           `;
         }).join('');
@@ -5527,6 +5829,68 @@ const Controllers = {
         this.openNewModal({ kind: 'parent', category: 'atendimento-cliente', status: 'Backlog' });
       });
       document.getElementById('saveOpTaskBtn').addEventListener('click', () => this.save());
+
+      const gPanel = document.getElementById('opGlobalStatusPickerPanel');
+      if (gPanel && !gPanel.dataset.boundPick) {
+        gPanel.addEventListener('click', (e) => {
+          const pickBtn = e.target.closest('[data-op-pick-status]');
+          if (!pickBtn || !gPanel.contains(pickBtn)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const tid = Controllers.opTask._globalStatusPickerOpId;
+          const nextStatus = pickBtn.getAttribute('data-op-pick-status');
+          if (!tid || !nextStatus) return;
+          const curTask = Store.findOpTask(tid);
+          if (curTask && String(curTask.status) === nextStatus) {
+            Controllers.opTask._closeGlobalStatusPicker();
+            return;
+          }
+          UI._lastMovedOpTask = { id: tid, status: nextStatus };
+          OpTaskService.changeStatus(tid, nextStatus);
+          UI.refreshOperationalUi();
+          UI.renderDashboard();
+          UI.renderCalendarPage();
+          UI.renderReportsPage();
+          setTimeout(() => { UI._lastMovedOpTask = null; }, 520);
+          Controllers.opTask._refreshAtdChildrenList();
+          Controllers.opTask._closeGlobalStatusPicker();
+          ToastService.show(`Status: ${nextStatus}`, 'success');
+        });
+        gPanel.dataset.boundPick = '1';
+      }
+
+      document.addEventListener(
+        'click',
+        e => {
+          const anchor = e.target.closest('[data-op-status-picker]');
+          if (!anchor) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const oid = Number(anchor.dataset.opStatusPicker);
+          if (!oid) return;
+          Controllers.opTask.openGlobalStatusPicker(anchor, oid);
+        },
+        true,
+      );
+
+      document.addEventListener(
+        'pointerdown',
+        e => {
+          const dd = document.getElementById('opGlobalStatusPicker');
+          if (!dd || dd.hidden) return;
+          if (dd.contains(e.target)) return;
+          if (e.target.closest('[data-op-status-picker]')) return;
+          Controllers.opTask._closeGlobalStatusPicker();
+        },
+        true,
+      );
+
+      document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        const dd = document.getElementById('opGlobalStatusPicker');
+        if (!dd || dd.hidden) return;
+        Controllers.opTask._closeGlobalStatusPicker();
+      });
 
       // Dropdown de status para ordens vinculadas (lista no modal de atendimento).
       const statusDd = document.getElementById('opAtdStatusDropdown');
@@ -6774,6 +7138,8 @@ async function initApp() {
   Controllers.auth.init();
   ChatMentionNotifs.syncBellUi();
 
+  SidebarNavOrder.apply();
+
   document.addEventListener(
     'click',
     (e) => {
@@ -6801,6 +7167,7 @@ async function initApp() {
   };
 
   Controllers.sidebar.init();
+  SidebarNavOrder.initDrag();
   Controllers.task.init();
   Controllers.opTask.init();
   Controllers.filters.init();

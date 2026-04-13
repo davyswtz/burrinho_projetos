@@ -83,6 +83,7 @@
     <nav class="nav" aria-label="Navegação">
       <span class="nav-section-label">Principal</span>
 
+      <div class="nav-pages-stack" id="sidebarNavPages" title="Segure e arraste um item para mudar a ordem do menu">
       <button type="button" class="nav-item active" data-page="dashboard" aria-current="page">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
           <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -120,6 +121,27 @@
         <span class="nav-label">Certificação Cemig</span>
       </button>
 
+      <button type="button" class="nav-item" data-page="correcao-atenuacao" aria-label="Correção de atenuação">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M4 19h16"/><path d="M7 17V9"/><path d="M12 17V5"/><path d="M17 17v-6"/><circle cx="12" cy="12" r="2" stroke-width="1.5"/>
+        </svg>
+        <span class="nav-label">Correção de atenuação</span>
+      </button>
+
+      <button type="button" class="nav-item" data-page="troca-etiqueta" aria-label="Troca de etiqueta">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M3 7h18"/><path d="M3 12h12"/><path d="M3 17h18"/><rect x="14" y="9" width="7" height="6" rx="1"/>
+        </svg>
+        <span class="nav-label">Troca de etiqueta</span>
+      </button>
+
+      <button type="button" class="nav-item" data-page="qualidade-potencia" aria-label="Qualidade de potência">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        <span class="nav-label">Qualidade de potência</span>
+      </button>
+
       <button type="button" class="nav-item" data-page="atendimento" aria-label="Atendimento ao cliente">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
           <path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z"/>
@@ -152,6 +174,7 @@
         </svg>
         <span class="nav-label">Configurações</span>
       </button>
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -528,6 +551,54 @@
 
           <div class="kanban-board atd-kanban-board" id="atendimentoBoard" role="region" aria-label="Quadro kanban de atendimento ao cliente">
             <!-- conteúdo gerado via JS (UI.renderAtendimentoPage) -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ PAGE: CORREÇÃO DE ATENUAÇÃO (placeholder) ═══ -->
+      <section class="page app-placeholder-page" id="page-correcao-atenuacao" aria-label="Correção de atenuação">
+        <div class="panel page-placeholder-panel" role="region">
+          <div class="panel-header">
+            <div>
+              <span class="panel-title">Correção de atenuação</span>
+              <p class="page-placeholder-sub">Módulo em desenvolvimento</p>
+            </div>
+          </div>
+          <div class="page-placeholder-body">
+            <p class="page-placeholder-lead">Esta página está sendo criada.</p>
+            <p class="page-placeholder-text">Em breve você poderá registrar e acompanhar <strong>correções de atenuação</strong> neste painel.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ PAGE: TROCA DE ETIQUETA (placeholder) ═══ -->
+      <section class="page app-placeholder-page" id="page-troca-etiqueta" aria-label="Troca de etiqueta">
+        <div class="panel page-placeholder-panel" role="region">
+          <div class="panel-header">
+            <div>
+              <span class="panel-title">Troca de etiqueta</span>
+              <p class="page-placeholder-sub">Módulo em desenvolvimento</p>
+            </div>
+          </div>
+          <div class="page-placeholder-body">
+            <p class="page-placeholder-lead">Esta página está sendo criada.</p>
+            <p class="page-placeholder-text">Em breve você poderá registrar e acompanhar <strong>trocas de etiqueta</strong> neste painel.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ PAGE: QUALIDADE DE POTÊNCIA (placeholder) ═══ -->
+      <section class="page app-placeholder-page" id="page-qualidade-potencia" aria-label="Qualidade de potência">
+        <div class="panel page-placeholder-panel" role="region">
+          <div class="panel-header">
+            <div>
+              <span class="panel-title">Qualidade de potência</span>
+              <p class="page-placeholder-sub">Módulo em desenvolvimento</p>
+            </div>
+          </div>
+          <div class="page-placeholder-body">
+            <p class="page-placeholder-lead">Esta página está sendo criada.</p>
+            <p class="page-placeholder-text">Em breve você poderá registrar e acompanhar <strong>qualidade de potência</strong> neste painel.</p>
           </div>
         </div>
       </section>
@@ -975,6 +1046,11 @@
     <button type="button" class="atd-status-dropdown-item" role="menuitem" data-status="Em andamento">Em andamento</button>
     <button type="button" class="atd-status-dropdown-item" role="menuitem" data-status="Concluída">Concluída</button>
   </div>
+</div>
+
+<!-- Menu global: todos os status da tarefa operacional (Kanban, dashboard, calendário, etc.) -->
+<div class="atd-status-dropdown op-global-status-picker" id="opGlobalStatusPicker" hidden>
+  <div class="atd-status-dropdown-panel" id="opGlobalStatusPickerPanel" role="menu" aria-label="Alterar status da tarefa"></div>
 </div>
 
 <!-- ═══ MODAL: WEBHOOK GOOGLE CHAT ═══ -->
