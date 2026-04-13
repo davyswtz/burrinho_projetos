@@ -210,6 +210,40 @@ const Store = (() => {
     note: 'planner.note.v2',
   };
 
+  /** Campos ATD / thread: o servidor pode devolver vazio ou prazo 0000-00-00; não sobrescrever valor bom do cliente. */
+  const OP_TASK_REMOTE_EMPTY_MERGE_FIELDS = [
+    'chatThreadKey',
+    'chatThreadWebhookUrl',
+    'nomeCliente',
+    'protocolo',
+    'dataEntrada',
+    'dataInstalacao',
+    'subProcesso',
+    'ordemServico',
+    'assinadaPor',
+    'assinadaEm',
+    'prazo',
+  ];
+
+  const isBlankOpTaskMergeValue = (field, v) => {
+    if (v === undefined || v === null) return true;
+    const s = String(v).trim();
+    if (!s) return true;
+    if (field === 'prazo' || field === 'dataEntrada' || field === 'dataInstalacao') {
+      if (s === '0000-00-00' || s.startsWith('0000-00-00')) return true;
+    }
+    return false;
+  };
+
+  const mergeLocalOpTaskIntoIncomingPatch = (localTask, incomingPatch) => {
+    if (!localTask || !incomingPatch) return;
+    for (const f of OP_TASK_REMOTE_EMPTY_MERGE_FIELDS) {
+      if (!isBlankOpTaskMergeValue(f, incomingPatch[f])) continue;
+      if (isBlankOpTaskMergeValue(f, localTask[f])) continue;
+      incomingPatch[f] = localTask[f];
+    }
+  };
+
   /**
    * Base da API: `APP_CONFIG.apiBaseUrl` (string), ou origem + pasta do app + `/api`.
    * Ex.: `https://site.com/burrinho/index.html` → `https://site.com/burrinho/api` (comum na HostGator).
@@ -306,11 +340,24 @@ const Store = (() => {
       }
     },
     async requestAny(paths, options = {}) {
+      const retryable = new Set([
+        'network_error',
+        'html_response',
+        'empty_response',
+        'invalid_json',
+        'http_error',
+      ]);
+      let last = null;
       for (const path of paths) {
         const result = await this.request(path, options);
-        if (result) return result;
+        last = result;
+        if (result && typeof result === 'object' && result.ok === true) return result;
+        if (result && typeof result === 'object' && result.error === 'api_disabled') return result;
+        const err = result && typeof result === 'object' ? result.error : '';
+        if (retryable.has(err)) continue;
+        return result;
       }
-      return null;
+      return last;
     },
     async getBootstrap() {
       const b = Date.now();
@@ -422,7 +469,13 @@ const Store = (() => {
   const syncUpOpTask = (task) => {
     if (!ApiService.enabled()) return;
     void ApiService.saveOpTask(task).then((resp) => {
-      if (resp && resp.ok && typeof resp.descricao === 'string' && task && task.id) {
+      if (!resp || !resp.ok) {
+        if (resp && typeof resp.error === 'string') {
+          console.warn('[op_tasks] Falha ao sincronizar tarefa', task?.id, resp.error);
+        }
+        return;
+      }
+      if (typeof resp.descricao === 'string' && task && task.id) {
         const t = opTasks.find(x => Number(x.id) === Number(task.id));
         if (t) {
           t.descricao = resp.descricao;
@@ -595,6 +648,7 @@ const Store = (() => {
           opTasks.push(inc);
           changed++;
         } else {
+          mergeLocalOpTaskIntoIncomingPatch(opTasks[i], inc);
           Object.assign(opTasks[i], inc);
           changed++;
         }
@@ -697,7 +751,7 @@ const Store = (() => {
           const snapshot = {};
           for (const f of fields) {
             const v = item?.[f];
-            if (v !== undefined && v !== null && String(v).trim() !== '') snapshot[f] = v;
+            if (!isBlankOpTaskMergeValue(f, v)) snapshot[f] = v;
           }
           if (Object.keys(snapshot).length) map.set(id, snapshot);
         }
@@ -706,9 +760,7 @@ const Store = (() => {
           if (!Number.isFinite(id) || !map.has(id)) continue;
           const snap = map.get(id);
           for (const f of Object.keys(snap)) {
-            if (inc[f] === undefined || inc[f] === null || String(inc[f]).trim() === '') {
-              inc[f] = snap[f];
-            }
+            if (isBlankOpTaskMergeValue(f, inc[f])) inc[f] = snap[f];
           }
         }
       };
@@ -719,18 +771,7 @@ const Store = (() => {
         nextTaskId = tasks.reduce((max, t) => Math.max(max, Number(t.id) || 0), 0) + 1;
       }
       if (Array.isArray(payload.opTasks)) {
-        mergeLocalFieldsById(opTasks, payload.opTasks, [
-          'chatThreadKey',
-          'chatThreadWebhookUrl',
-          'nomeCliente',
-          'protocolo',
-          'dataEntrada',
-          'subProcesso',
-          'dataInstalacao',
-          'ordemServico',
-          'assinadaPor',
-          'assinadaEm',
-        ]);
+        mergeLocalFieldsById(opTasks, payload.opTasks, OP_TASK_REMOTE_EMPTY_MERGE_FIELDS);
         opTasks.splice(0, opTasks.length, ...payload.opTasks);
         nextOpTaskId = opTasks.reduce((max, t) => Math.max(max, Number(t.id) || 0), 0) + 1;
       }
@@ -1004,7 +1045,7 @@ const Utils = {
     return this._avatarMap[name];
   },
 
-  /** Ícone “copiar” (duas folhas) — copia código/protocolo da tarefa, não o ID numérico do banco. */
+  /** Ícone “copiar” (duas folhas) — texto vem de `opTaskDisplayRef` (ID, taskCode ou protocolo conforme a categoria). */
   TASK_COPY_ID_SVG:
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
 
@@ -1042,13 +1083,30 @@ const Utils = {
   },
 
   /**
-   * Texto a copiar para tarefa operacional: protocolo do formulário, senão taskCode, senão código sintético.
-   * Alinhado ao que a UI mostra (ex.: linha PROTOCOLO nos cards de atendimento).
+   * Texto a copiar / exibir como referência da tarefa operacional.
+   * Atendimento ao cliente: taskCode ou código sintético (região + ATD + nº), não o protocolo do formulário.
+   * Otimização de rede: ID numérico da tarefa; depois taskCode / código sintético — nunca o protocolo do formulário.
+   * Demais categorias: protocolo do formulário, senão taskCode, senão código sintético.
    */
   opTaskDisplayRef(task) {
     if (!task || typeof task !== 'object') return '';
     const proto = String(task.protocolo || '').trim();
     const code = String(task.taskCode || '').trim();
+    if (task.categoria === 'atendimento-cliente') {
+      if (code) return code;
+      const synthetic = this.syntheticOpTaskCode(task);
+      if (synthetic) return synthetic;
+      if (proto) return proto;
+      return '';
+    }
+    if (task.categoria === 'otimizacao-rede') {
+      const nid = Number(task.id);
+      if (Number.isFinite(nid) && nid > 0) return String(nid);
+      if (code) return code;
+      const synthetic = this.syntheticOpTaskCode(task);
+      if (synthetic) return synthetic;
+      return '';
+    }
     if (proto) return proto;
     if (code) return code;
     if (task.categoria) return this.syntheticOpTaskCode(task);
@@ -1067,7 +1125,7 @@ const Utils = {
     if (!code) return '';
     const cls = ['task-copy-id-btn', extraClass].filter(Boolean).join(' ');
     const a = this.escapeHtmlAttr(code);
-    return `<button type="button" class="${cls}" draggable="false" data-copy-protocol="${a}" title="Copiar protocolo (${code})" aria-label="Copiar protocolo ${code}">${this.TASK_COPY_ID_SVG}</button>`;
+    return `<button type="button" class="${cls}" draggable="false" data-copy-protocol="${a}" title="Copiar identificador (${code})" aria-label="Copiar identificador ${code}">${this.TASK_COPY_ID_SVG}</button>`;
   },
 
   async copyTextToClipboard(text) {
@@ -1624,22 +1682,24 @@ const WebhookService = {
       const histAtd = Array.isArray(task?.historico) ? task.historico : [];
       const nomeCliente = String(task.nomeCliente || task.titulo || '').trim();
       const protocolo = String(task.protocolo || '').trim();
+      const okYmd = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !d.startsWith('0000');
       const dataEntradaIso = String(task.dataEntrada || '').trim();
       const deDay = dataEntradaIso.slice(0, 10);
-      const dataEntrada = (/^\d{4}-\d{2}-\d{2}$/.test(deDay) ? Utils.formatDate(deDay) : '') ||
+      const dataEntrada = (okYmd(deDay) ? Utils.formatDate(deDay) : '') ||
         (() => {
           const c = String(task.criadaEm || '').trim();
           const day = c.slice(0, 10);
-          return /^\d{4}-\d{2}-\d{2}$/.test(day) ? Utils.formatDate(day) : '';
+          return okYmd(day) ? Utils.formatDate(day) : '';
         })();
       // “Data de saída” no formulário (op-atd-data-instalacao) → task.dataInstalacao; campo “prazo” costuma ficar vazio no pai ATD.
       const saidaIso = String(task.dataInstalacao || '').trim();
       const saidaDay = saidaIso.slice(0, 10);
-      const prazoSaidaFmt = /^\d{4}-\d{2}-\d{2}$/.test(saidaDay) ? Utils.formatDate(saidaDay) : '';
+      const prazoSaidaFmt = okYmd(saidaDay) ? Utils.formatDate(saidaDay) : '';
       const prazoRaw = String(task.prazo || '').trim();
       const prazoDay = prazoRaw.slice(0, 10);
-      const prazoLegadoFmt =
-        /^\d{4}-\d{2}-\d{2}$/.test(prazoDay) ? Utils.formatDate(prazoDay) : String(prazoRaw || '').trim();
+      const prazoLegadoFmt = okYmd(prazoDay)
+        ? Utils.formatDate(prazoDay)
+        : (prazoRaw && !prazoRaw.startsWith('0000-00-00') ? String(prazoRaw).trim() : '');
       const prazoFinal = prazoSaidaFmt || prazoLegadoFmt;
       const enviadoPor =
         String(task.assinadaPor || '').trim() ||
@@ -3291,13 +3351,10 @@ const UI = {
             `<button type="button" class="status-action-btn ${statusActionClass[ns] || 'to-andamento'}" data-op-id="${parent.id}" data-to-status="${Utils.escapeHtmlAttr(ns)}">${statusLabels[ns] || ns}</button>`,
           ).join('');
           const titleEsc = Utils.escapeHtml(parent.nomeCliente || parent.titulo || '(Sem título)');
-          const statusLine = Utils.escapeHtml(String(parent.status || '—').trim());
           const subsCount = kids.length;
           const assinatura = String(parent.assinadaPor || '').trim();
           const sigHtml = assinatura ? `<div class="kanban-card-signature">✍ ${Utils.escapeHtml(assinatura)}</div>` : '';
           const copyBtnHtml = Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(parent));
-          const cidade = Utils.escapeHtml(String(parent.regiao || '').trim() || '—');
-          const subProcesso = Utils.escapeHtml(String(parent.subProcesso || '').trim() || '—');
           const dataEntrada = Utils.escapeHtml(String(parent.dataEntrada || '').trim() || '—');
           const prazoFinal = parent.prazo ? Utils.escapeHtml(Utils.formatDate(parent.prazo)) : '—';
           const doneCount = kids.filter(c => c.status === 'Concluída' || c.status === 'Finalizada' || c.status === 'Finalizado').length;
@@ -3307,7 +3364,6 @@ const UI = {
                 <span>Demanda: <strong>${subsCount}</strong> O.S</span>
                 <span>Finalizadas: <strong>${doneCount}</strong></span>
               </div>
-              <div class="atd-card-status">Status: <strong>${statusLine}</strong></div>
             </div>
           `;
           const taskIdLabel = Utils.escapeHtml(Utils.opTaskDisplayRef(parent));
@@ -3316,11 +3372,8 @@ const UI = {
                 ${badgesRow}
                 <div class="atd-card-toprow">
                   ${copyBtnHtml}
-                  <div class="atd-card-topmeta">
-                    <div class="atd-card-topmeta-col"><span class="atd-card-topmeta-k">CIDADE</span> <span class="atd-card-topmeta-v">${cidade}</span></div>
-                  </div>
+                  <div class="atd-card-client-next-copy">${titleEsc}</div>
                 </div>
-                <div class="atd-card-name">${titleEsc}</div>
                 <div class="atd-card-dates">
                   <div class="atd-card-datepair"><span class="atd-card-date-k">DATA DE ENTRADA:</span> <span class="atd-card-date-v">${dataEntrada}</span></div>
                   <div class="atd-card-datepair ${isLate ? 'late' : ''}"><span class="atd-card-date-k">PRAZO:</span> <span class="atd-card-date-v">${prazoFinal}</span></div>
@@ -4862,6 +4915,41 @@ const Controllers = {
       return regionPrefix ? `${regionPrefix}-${base}` : base;
     },
 
+    _removeOpAtdSubprocessoLegacyOption(subp) {
+      if (!subp) return;
+      subp.querySelector?.('option[data-atd-subprocesso-legacy]')?.remove();
+    },
+
+    /** Preenche o select de subprocesso (atendimento pai); mantém texto legado como opção extra ao editar. */
+    _setOpAtdSubprocessoSelectValue(raw) {
+      const subp = document.getElementById('op-atd-subprocesso');
+      if (!subp) return;
+      if (subp.tagName !== 'SELECT') {
+        subp.value = String(raw || '').trim();
+        return;
+      }
+      this._removeOpAtdSubprocessoLegacyOption(subp);
+      const v = String(raw || '').trim();
+      if (!v) {
+        subp.value = '';
+        return;
+      }
+      const low = v.toLowerCase();
+      let canon = '';
+      if (low === 'prazo' || v === 'Prazo') canon = 'Prazo';
+      else if (low === 'abordagem predial' || v === 'Abordagem predial') canon = 'Abordagem predial';
+      if (canon) {
+        subp.value = canon;
+        return;
+      }
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      opt.setAttribute('data-atd-subprocesso-legacy', '1');
+      subp.appendChild(opt);
+      subp.value = v;
+    },
+
     _clearForm(preset = {}) {
       const category = preset.category || Store.currentOpCategory;
       document.getElementById('op-titulo').value      = '';
@@ -4870,7 +4958,6 @@ const Controllers = {
       if (chatIdHidden) chatIdHidden.value = '';
       const proto = document.getElementById('op-atd-protocolo');
       const dataEnt = document.getElementById('op-atd-data-entrada');
-      const subp = document.getElementById('op-atd-subprocesso');
       const dataInst = document.getElementById('op-atd-data-instalacao');
       const os = document.getElementById('op-atd-ordem-servico');
       const desc = document.getElementById('op-atd-descricao');
@@ -4880,7 +4967,7 @@ const Controllers = {
       if (childTituloClear) childTituloClear.value = '';
       if (proto) proto.value = '';
       if (dataEnt) dataEnt.value = '';
-      if (subp) subp.value = '';
+      this._setOpAtdSubprocessoSelectValue('');
       if (dataInst) dataInst.value = '';
       if (os) os.value = '';
       if (desc) desc.value = '';
@@ -5153,7 +5240,6 @@ const Controllers = {
       if (chatIdHidden) chatIdHidden.value = String(task.responsavelChatId || '').trim();
       const proto = document.getElementById('op-atd-protocolo');
       const dataEnt = document.getElementById('op-atd-data-entrada');
-      const subp = document.getElementById('op-atd-subprocesso');
       const dataInst = document.getElementById('op-atd-data-instalacao');
       const os = document.getElementById('op-atd-ordem-servico');
       const desc = document.getElementById('op-atd-descricao');
@@ -5171,7 +5257,7 @@ const Controllers = {
         if (proto) proto.value = '';
         if (os) os.value = '';
         if (dataEnt) dataEnt.value = '';
-        if (subp) subp.value = '';
+        this._setOpAtdSubprocessoSelectValue('');
         if (dataInst) dataInst.value = '';
         if (desc) desc.value = '';
         const childTituloOtim = document.getElementById('op-atd-child-titulo');
@@ -5189,7 +5275,7 @@ const Controllers = {
         if (proto) proto.value = '';
         if (os) os.value = '';
         if (dataEnt) dataEnt.value = '';
-        if (subp) subp.value = '';
+        this._setOpAtdSubprocessoSelectValue('');
         if (dataInst) dataInst.value = '';
         if (desc) desc.value = '';
         const childTituloCem = document.getElementById('op-atd-child-titulo');
@@ -5211,7 +5297,7 @@ const Controllers = {
         }
         if (proto) proto.value = String(task.protocolo || '').trim();
         if (dataEnt) dataEnt.value = String(task.dataEntrada || '').trim();
-        if (subp) subp.value = String(task.subProcesso || '').trim();
+        this._setOpAtdSubprocessoSelectValue(task.subProcesso);
         if (dataInst) dataInst.value = String(task.dataInstalacao || '').trim();
         if (os) os.value = String(task.ordemServico || '').trim();
         if (desc) desc.value = String(task.descricao || '').trim();

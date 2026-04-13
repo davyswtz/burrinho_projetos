@@ -1602,39 +1602,17 @@ tbody td:first-child { color: var(--white); font-weight: 500; }
   align-items:center;
   gap:8px;
 }
-.atd-card-topmeta{
-  flex:1;
-  display:grid;
-  grid-template-columns: 1fr;
-  gap: 2px;
+/* Nome do cliente ao lado do botão copiar (card atendimento pai) */
+.atd-card-client-next-copy{
+  flex: 1;
   min-width: 0;
-}
-.atd-card-topmeta-col{
-  display:flex;
-  align-items:baseline;
-  gap:6px;
-  min-width:0;
-  font-family: var(--font-mono);
-  font-size:10px;
-  color: var(--white4);
-}
-.atd-card-topmeta-k{
-  color: var(--white4);
-  letter-spacing: .04em;
-  white-space: nowrap;
-}
-.atd-card-topmeta-v{
-  color: var(--white2);
-  overflow:hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.atd-card-name{
-  margin-top: 6px;
   font-size: 14px;
   font-weight: 700;
   color: var(--white);
   line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .atd-card-dates{
   margin-top: 6px;
@@ -1677,14 +1655,11 @@ tbody td:first-child { color: var(--white); font-weight: 500; }
   margin-top: 6px;
   display:flex;
   align-items: baseline;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--white4);
-}
-.atd-card-status strong{
-  color: var(--white2);
 }
 .atd-card-taskid{
   margin-left: auto;

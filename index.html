@@ -737,7 +737,7 @@
     <div class="modal-head">
       <div class="modal-head-main">
         <span class="modal-title" id="opTaskModalTitle">Nova tarefa</span>
-        <button type="button" class="task-copy-id-btn op-task-modal-copy-id" id="opTaskModalCopyIdBtn" hidden title="Copiar protocolo / código da tarefa" aria-label="Copiar protocolo da tarefa">
+        <button type="button" class="task-copy-id-btn op-task-modal-copy-id" id="opTaskModalCopyIdBtn" hidden title="Copiar identificador da tarefa" aria-label="Copiar identificador da tarefa">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
         </button>
       </div>
@@ -799,7 +799,11 @@
           </div>
           <div class="form-group">
             <label for="op-atd-subprocesso">Subprocesso</label>
-            <input type="text" id="op-atd-subprocesso" placeholder="Opcional" autocomplete="off"/>
+            <select id="op-atd-subprocesso" aria-label="Subprocesso">
+              <option value="">Opcional</option>
+              <option value="Prazo">Prazo</option>
+              <option value="Abordagem predial">Abordagem predial</option>
+            </select>
           </div>
         </div>
         <div class="form-row">

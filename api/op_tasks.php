@@ -8,6 +8,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
+    if (empty($_SESSION['planner_user'])) {
+        jsonResponse(['ok' => false, 'error' => 'unauthorized'], 401);
+    }
+
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     if ($method === 'DELETE') {
         $data = readJsonBody();
@@ -42,6 +46,9 @@ try {
     $coord = (string) ($data['coordenadas'] ?? '');
     $locText = (string) ($data['localizacaoTexto'] ?? '');
     $descricaoRaw = (string) ($data['descricao'] ?? '');
+    // DATE no MySQL: string vazia vira 0000-00-00 em modos permissivos — usar NULL.
+    $prazoIn = trim((string) ($data['prazo'] ?? ''));
+    $prazoBind = ($prazoIn === '' || $prazoIn === '0000-00-00') ? null : $prazoIn;
     $sql = 'INSERT INTO op_tasks (
               id, taskCode, titulo, setor, regiao, responsavel, clientesAfetados,
               coordenadas, localizacao_texto, descricao, categoria, prazo, prioridade, status,
@@ -81,43 +88,62 @@ try {
               assinada_em = VALUES(assinada_em),
               updated_at = NOW()';
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([
-        ':id' => $id,
-        ':taskCode' => (string) ($data['taskCode'] ?? ''),
-        ':titulo' => (string) ($data['titulo'] ?? ''),
-        ':setor' => (string) ($data['setor'] ?? ''),
-        ':regiao' => (string) ($data['regiao'] ?? ''),
-        ':responsavel' => (string) ($data['responsavel'] ?? ''),
-        ':clientesAfetados' => (string) ($data['clientesAfetados'] ?? ''),
-        ':coordenadas' => $coord,
-        ':localizacao_texto' => $locText,
-        ':descricao' => $descricaoRaw,
-        ':categoria' => (string) ($data['categoria'] ?? 'rompimentos'),
-        ':prazo' => (string) ($data['prazo'] ?? ''),
-        ':prioridade' => (string) ($data['prioridade'] ?? 'Média'),
-        ':status' => (string) ($data['status'] ?? 'Criada'),
-        ':is_parent_task' => !empty($data['isParentTask']) ? 1 : 0,
-        ':parent_task_id' => isset($data['parentTaskId']) && $data['parentTaskId'] !== '' ? (int) $data['parentTaskId'] : null,
-        ':criadaEm' => (string) ($data['criadaEm'] ?? date('c')),
-        ':historico' => json_encode($data['historico'] ?? [], JSON_UNESCAPED_UNICODE),
-        ':chat_thread_key' => (string) ($data['chatThreadKey'] ?? ''),
-        ':nome_cliente' => (string) ($data['nomeCliente'] ?? ''),
-        ':protocolo' => (string) ($data['protocolo'] ?? ''),
-        ':data_entrada' => (string) ($data['dataEntrada'] ?? ''),
-        ':data_instalacao' => (string) ($data['dataInstalacao'] ?? ''),
-        ':assinada_por' => (string) ($data['assinadaPor'] ?? ''),
-        ':assinada_em' => (string) ($data['assinadaEm'] ?? ''),
-    ]);
+    $historicoIn = $data['historico'] ?? [];
+    if (!is_array($historicoIn)) {
+        $historicoIn = [];
+    }
+    $historicoJson = json_encode($historicoIn, JSON_UNESCAPED_UNICODE);
+    if ($historicoJson === false) {
+        $historicoJson = '[]';
+    }
 
-    $finalDesc = processOpTaskDescricaoImages($descricaoRaw, $id, $pdo);
-    pruneOpTaskImagesNotInHtml($pdo, $id, $finalDesc);
-    if ($finalDesc !== $descricaoRaw) {
-        $u = $pdo->prepare('UPDATE op_tasks SET descricao = :d WHERE id = :id');
-        $u->execute([':d' => $finalDesc, ':id' => $id]);
+    $pdo->beginTransaction();
+    try {
+        $stmt->execute([
+            ':id' => $id,
+            ':taskCode' => (string) ($data['taskCode'] ?? ''),
+            ':titulo' => (string) ($data['titulo'] ?? ''),
+            ':setor' => (string) ($data['setor'] ?? ''),
+            ':regiao' => (string) ($data['regiao'] ?? ''),
+            ':responsavel' => (string) ($data['responsavel'] ?? ''),
+            ':clientesAfetados' => (string) ($data['clientesAfetados'] ?? ''),
+            ':coordenadas' => $coord,
+            ':localizacao_texto' => $locText,
+            ':descricao' => $descricaoRaw,
+            ':categoria' => (string) ($data['categoria'] ?? 'rompimentos'),
+            ':prazo' => $prazoBind,
+            ':prioridade' => (string) ($data['prioridade'] ?? 'Média'),
+            ':status' => (string) ($data['status'] ?? 'Criada'),
+            ':is_parent_task' => !empty($data['isParentTask']) ? 1 : 0,
+            ':parent_task_id' => isset($data['parentTaskId']) && $data['parentTaskId'] !== '' ? (int) $data['parentTaskId'] : null,
+            ':criadaEm' => (string) ($data['criadaEm'] ?? date('c')),
+            ':historico' => $historicoJson,
+            ':chat_thread_key' => (string) ($data['chatThreadKey'] ?? ''),
+            ':nome_cliente' => (string) ($data['nomeCliente'] ?? ''),
+            ':protocolo' => (string) ($data['protocolo'] ?? ''),
+            ':data_entrada' => (string) ($data['dataEntrada'] ?? ''),
+            ':data_instalacao' => (string) ($data['dataInstalacao'] ?? ''),
+            ':assinada_por' => (string) ($data['assinadaPor'] ?? ''),
+            ':assinada_em' => (string) ($data['assinadaEm'] ?? ''),
+        ]);
+
+        $finalDesc = processOpTaskDescricaoImages($descricaoRaw, $id, $pdo);
+        pruneOpTaskImagesNotInHtml($pdo, $id, $finalDesc);
+        if ($finalDesc !== $descricaoRaw) {
+            $u = $pdo->prepare('UPDATE op_tasks SET descricao = :d WHERE id = :id');
+            $u->execute([':d' => $finalDesc, ':id' => $id]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
     }
 
     jsonResponse(['ok' => true, 'descricao' => $finalDesc]);
 } catch (Throwable $e) {
-    jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
+    // CORRIGIDO: não expor mensagens internas do PDO/SQL ao cliente
+    jsonResponse(['ok' => false, 'error' => 'server_error'], 500);
 }
 
