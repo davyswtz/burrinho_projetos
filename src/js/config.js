@@ -4,7 +4,8 @@
 
   window.APP_CONFIG = {
     ...prev,
-    appBuild: Object.prototype.hasOwnProperty.call(prev, 'appBuild') ? prev.appBuild : '2026-03-30-1',
+    // Sempre sobrescreve para quebrar cache de JS/CSS no deploy local
+    appBuild: '2026-04-16-6',
     // Webhooks por região (Google Chat). Deixe vazio no repositório.
     defaultWebhookUrlsByRegion: Object.prototype.hasOwnProperty.call(prev, 'defaultWebhookUrlsByRegion')
       ? prev.defaultWebhookUrlsByRegion

@@ -832,6 +832,35 @@ const Store = (() => {
   };
 })();
 
+// Alias global: alguns módulos usam ApiService diretamente
+// (o objeto real é mantido dentro do Store).
+const ApiService = Store.ApiService;
+
+// ─────────────────────────────────────────────────────────────
+// Termômetro (componente) — manter lógica de posição da agulha
+// ─────────────────────────────────────────────────────────────
+const THERMO_CONFIG = {
+  // maxDbm (estável) = 0% esquerda | minDbm (crítico) = 100% direita
+  minDbm: -28.0,
+  maxDbm: -22.01,
+};
+
+function updateThermometer(dbm) {
+  const { minDbm, maxDbm } = THERMO_CONFIG;
+  const n = Number(dbm);
+  if (!Number.isFinite(n)) return;
+  const clamped = Math.min(Math.max(n, minDbm), maxDbm);
+  const percent = ((maxDbm - clamped) / (maxDbm - minDbm)) * 100;
+  const needle = document.getElementById('thermo-needle');
+  if (needle) needle.style.left = `${percent.toFixed(1)}%`;
+}
+
+function updateStats(totalItems, criticalPercent, dbm) {
+  const el = document.getElementById('thermo-stats');
+  if (!el) return;
+  el.textContent = `${Number(totalItems) || 0} itens · ${Number(criticalPercent) || 0}% crítico/alto · Indicador posicionado na média atual`;
+}
+
 
 /* ─────────────────────────────────────────────────────────────
    UTILITIES — Funções puras auxiliares
@@ -1073,6 +1102,10 @@ const Utils = {
       'atendimento-cliente': 'ATD',
       'otimizacao-rede': 'NET',
       'certificacao-cemig': 'CEM',
+      'correcao-atenuacao': 'ATN',
+      'troca-etiqueta': 'ETQ',
+      'qualidade-potencia': 'QDP',
+      'manutencao-corretiva': 'MCR',
     };
     const prefix = prefixMap[task.categoria] || 'ROM';
     const regionPrefix = this._opTaskRegionPrefix(task.regiao);
@@ -1974,6 +2007,10 @@ const TaskService = {
     'atendimento-cliente': 'Atendimento ao Cliente',
     'otimizacao-rede': 'Otimização de Rede',
     'certificacao-cemig': 'Certificação Cemig',
+    'correcao-atenuacao': 'Correção de atenuação',
+    'troca-etiqueta': 'Troca de etiqueta',
+    'qualidade-potencia': 'Qualidade de potência',
+    'manutencao-corretiva': 'Manutenção corretiva',
   },
 
   _isDoneStatus(status) {
@@ -2086,6 +2123,9 @@ const OpTaskService = {
     'atendimento-cliente': 'Atendimento ao Cliente',
     'otimizacao-rede': 'Otimização de Rede',
     'certificacao-cemig': 'Certificação Cemig',
+    'correcao-atenuacao': 'Correção de atenuação',
+    'troca-etiqueta': 'Troca de etiqueta',
+    'qualidade-potencia': 'Qualidade de potência',
   },
 
   /** Kanban Certificação Cemig — ordem do fluxo */
@@ -2359,7 +2399,8 @@ const ReportsService = {
           (category === 'troca-poste' && t.categoria === 'troca-poste') ||
           (category === 'atendimento-cliente' && t.categoria === 'atendimento-cliente') ||
           (category === 'otimizacao-rede' && t.categoria === 'otimizacao-rede') ||
-          (category === 'certificacao-cemig' && t.categoria === 'certificacao-cemig');
+          (category === 'certificacao-cemig' && t.categoria === 'certificacao-cemig') ||
+          (category === 'manutencao-corretiva' && t.categoria === 'manutencao-corretiva');
         const matchRegion = regionFilter === 'all' || String(t.regiao || '').trim().toLowerCase() === regionFilter;
         const matchTech = techFilter === 'all' || String(t.responsavel || '').trim().toLowerCase().includes(techFilter);
         return matchPeriod && matchCategory && matchRegion && matchTech;
@@ -3427,9 +3468,10 @@ const UI = {
       'otimizacao-rede': { title: 'Otimização de Rede', crumb: 'Projetos de rede' },
       'certificacao-cemig': { title: 'Certificação Cemig', crumb: 'Projetos de rede' },
       atendimento: { title: 'Atendimento ao cliente', crumb: 'Central de atendimento' },
-      'correcao-atenuacao': { title: 'Correção de atenuação', crumb: 'Em construção' },
-      'troca-etiqueta': { title: 'Troca de etiqueta', crumb: 'Em construção' },
-      'qualidade-potencia': { title: 'Qualidade de potência', crumb: 'Em construção' },
+      'correcao-atenuacao': { title: 'Correção de atenuação', crumb: 'Atividade de manutenção' },
+      'troca-etiqueta': { title: 'Troca de etiqueta', crumb: 'Atividade de manutenção' },
+      'qualidade-potencia': { title: 'Qualidade de potência', crumb: 'Atividade de manutenção' },
+      'manutencao-corretiva': { title: 'Manutenção corretiva', crumb: 'Atividade de manutenção' },
       calendario: { title: 'Calendário', crumb: 'Agenda' },
       relatorio: { title: 'Relatório', crumb: 'Rompimentos' },
       config: { title: 'Configurações', crumb: 'Sistema' },
@@ -3447,7 +3489,15 @@ const UI = {
     }
 
     // Re-renderiza página específica
-    const opPages = new Set(['rompimentos', 'troca-poste', 'otimizacao-rede', 'certificacao-cemig']);
+    const opPages = new Set([
+      'rompimentos',
+      'troca-poste',
+      'otimizacao-rede',
+      'certificacao-cemig',
+      'troca-etiqueta',
+      'qualidade-potencia',
+      'manutencao-corretiva',
+    ]);
     if (opPages.has(page)) {
       Store.currentOpCategory = page;
       // Sempre usa o container de tarefas operacionais
@@ -3455,6 +3505,7 @@ const UI = {
       document.getElementById('page-tarefas')?.classList.add('active');
       this.renderOpPage();
     }
+    if (page === 'correcao-atenuacao') this.renderAtenuacaoDashboardPage();
     if (page === 'atendimento') this.renderAtendimentoPage();
     if (page === 'calendario') this.renderCalendarPage();
     if (page === 'relatorio') this.renderRelatorioPage();
@@ -3482,6 +3533,7 @@ const UI = {
       'correcao-atenuacao',
       'troca-etiqueta',
       'qualidade-potencia',
+      'manutencao-corretiva',
       'calendario',
       'relatorio',
       'config',
@@ -3743,6 +3795,7 @@ const UI = {
   /** Atualiza Kanban (Tarefas) ou painel de Atendimento conforme a página ativa. */
   refreshOperationalUi() {
     if (Store.currentPage === 'atendimento') this.renderAtendimentoPage();
+    else if (Store.currentPage === 'correcao-atenuacao') this.renderAtenuacaoDashboardPage();
     else this.renderOpPage();
   },
 
@@ -3750,6 +3803,1007 @@ const UI = {
   renderOpPage() {
     this.renderOpStats();
     this.renderKanban();
+  },
+
+  /* ── Correção de Atenuação (Dashboard flat) ───────────────── */
+  _atn2State: {
+    search: '',
+    region: 'todas',
+    tech: 'todos',
+    modalOpen: false,
+    spin: false,
+    items: [],
+    lanes: [],
+    activities: [],
+  },
+
+  _atn2Clamp(n, min, max) {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return min;
+    return Math.max(min, Math.min(max, x));
+  },
+
+  _atn2TechColor(tech = '') {
+    const t = normalizeTechName(tech);
+    if (!t) return 'gray';
+    // hashing simples para cores estáveis entre sessões
+    let h = 0;
+    for (let i = 0; i < t.length; i++) h = ((h << 5) - h + t.charCodeAt(i)) | 0;
+    const idx = Math.abs(h) % 3;
+    return idx === 0 ? 'teal' : idx === 1 ? 'amber' : 'blue';
+  },
+
+  _atn2PriorityFromBucket(bucket) {
+    if (bucket === 'p0') return 'critica';
+    if (bucket === 'p1') return 'alta';
+    if (bucket === 'p2') return 'media';
+    if (bucket === 'p3') return 'leve';
+    if (bucket === 'mon') return 'leve';
+    return 'nd';
+  },
+
+  _atn2PriorityFromDbm(dbm) {
+    const n = Number(dbm);
+    if (!Number.isFinite(n) || n === 0) return 'nd';
+    // Métricas (conforme solicitado):
+    // Leve:   -22.01 a -24.00
+    // Média:  -24.01 a -26.00
+    // Alta:   -26.01 a -28.00
+    // Crítica: pior que -28.00 (n < -28.00)
+    if (n < -28.0) return 'critica';
+    if (n <= -26.01) return 'alta';
+    if (n <= -24.01) return 'media';
+    if (n <= -22.01) return 'leve';
+    return 'leve';
+  },
+
+  _atn2NormalizeNegativeDbmInput(raw) {
+    const s0 = String(raw ?? '').trim();
+    if (!s0) return '';
+    let s = s0.replace(/[^\d.,-]/g, '');
+    if (s === '-') return s;
+    s = s.replace(/-/g, '');
+    s = s.replace(/,/g, '.');
+    const parts = s.split('.');
+    if (parts.length > 2) s = `${parts[0]}.${parts.slice(1).join('')}`;
+    return `-${s}`;
+  },
+
+  _atn2ItemsFromStore() {
+    // Fallback para eventuais categorias legadas (underscore)
+    const tasks = [
+      ...(Store.getOpTasksByCategory('correcao-atenuacao') || []),
+      ...(Store.getOpTasksByCategory('correcao_atenuacao') || []),
+    ];
+    return tasks.map((t) => {
+      const id = Number(t.id) || 0;
+      const tech = String(t.responsavel || t.tecnico || '—').trim() || '—';
+      const region = String(t.regiao || '').trim();
+      const title = String(t.titulo || t.nome || t.name || `Correção #${id || '—'}`).trim();
+      const dbm = this._atnDb(t);
+      const priority = this._atn2PriorityFromDbm(dbm);
+      const initials = Utils.getInitials(tech);
+      const techColor = this._atn2TechColor(tech);
+      const name = region ? `${title} · ${region}` : title;
+      return {
+        id,
+        name,
+        dbm: Number.isFinite(dbm) ? dbm : 0,
+        priority,
+        status: String(t.status || 'Criada'),
+        tech,
+        techInitials: initials,
+        techColor,
+      };
+    });
+  },
+
+  _atn2ThermoPct(items) {
+    return this._atn2ThermoStats(items).pct;
+  },
+
+  _atn2ThermoStats(items) {
+    // 0% = bom (>= -22.01 dBm), 100% = crítico (< -28.00 dBm)
+    const worst = this._ATN_THRESHOLDS_DEFAULT.p0; // -28
+    const best = this._ATN_THRESHOLDS_DEFAULT.p3; // -22.01
+    let sum = 0;
+    let count = 0;
+    for (const it of items) {
+      let db = Number(it?.dbm);
+      if (!Number.isFinite(db) || db === 0) continue;
+      if (db > 0) db = -db;
+      sum += db;
+      count++;
+    }
+    if (!count) return { count: 0, avgDbm: null, pct: 0 };
+    const avgDbm = sum / count;
+    const pct = this._atn2Clamp(((best - avgDbm) / (best - worst)) * 100, 0, 100);
+    return { count, avgDbm, pct: Math.round(pct) };
+  },
+
+  _atn2ThermoAccent(pct) {
+    const p = this._atn2Clamp(pct, 0, 100);
+    // Degradê contínuo: 120° (verde) -> 0° (vermelho)
+    const hue = Math.round(120 - (120 * (p / 100)));
+    const dot = `hsl(${hue} 90% 55%)`;
+    const glow = `hsla(${hue} 90% 55% / .35)`;
+    return { dot, glow };
+  },
+
+  _atn2PriorityMeta(priority) {
+    const p = String(priority || '').toLowerCase();
+    if (p === 'critica') return { border: '#ef4444', value: 'var(--danger)', badgeBg: 'rgba(255,69,69,.12)', badgeText: 'var(--danger)', label: 'P0 Crítica' };
+    if (p === 'alta') return { border: '#f59e0b', value: 'var(--warning)', badgeBg: 'rgba(245,200,66,.12)', badgeText: 'var(--warning)', label: 'P1 Alta' };
+    if (p === 'media') return { border: '#2563eb', value: 'var(--info)', badgeBg: 'rgba(66,184,245,.12)', badgeText: 'var(--info)', label: 'P2 Média' };
+    if (p === 'leve') return { border: '#22c55e', value: 'var(--green)', badgeBg: 'rgba(45,255,110,.10)', badgeText: 'var(--green)', label: 'P3 Leve' };
+    return { border: 'rgba(255,255,255,.22)', value: 'var(--white3)', badgeBg: 'rgba(255,255,255,.06)', badgeText: 'var(--white3)', label: 'N/D' };
+  },
+  _atn2TechAvatarStyle(colorKey = '') {
+    const k = String(colorKey || '').toLowerCase();
+    if (k === 'teal') return 'background:#14b8a6';
+    if (k === 'amber') return 'background:#f59e0b';
+    if (k === 'blue') return 'background:#3b82f6';
+    return 'background:#6b7280';
+  },
+  _atn2Escape(s) { return Utils.escapeHtml(String(s ?? '')); },
+  _atn2FormatDbm(dbm) {
+    const n = Number(dbm);
+    if (!Number.isFinite(n) || n === 0) return 'N/D';
+    const fixed = n.toFixed(1);
+    return fixed.endsWith('.0') ? fixed.slice(0, -2) : fixed;
+  },
+  _atn2RegionsFromItems(items) {
+    const set = new Set();
+    items.forEach(it => {
+      const name = String(it.name || '');
+      const idx = name.indexOf('·');
+      const reg = idx >= 0 ? name.slice(idx + 1).trim() : '';
+      set.add(reg || 'Não informado');
+    });
+    return ['todas', ...Array.from(set).sort((a, b) => String(a).localeCompare(String(b)))];
+  },
+  _atn2TechsFromItems(items) {
+    const set = new Set();
+    items.forEach(it => set.add(String(it.tech || '').trim() || '—'));
+    return ['todos', ...Array.from(set).sort((a, b) => String(a).localeCompare(String(b)))];
+  },
+  _atn2FilterItems(items, st) {
+    const q = String(st.search || '').trim().toLowerCase();
+    const regSel = String(st.region || 'todas').trim().toLowerCase();
+    const techSel = String(st.tech || 'todos').trim().toLowerCase();
+    return items.filter(it => {
+      const name = String(it.name || '').toLowerCase();
+      const tech = String(it.tech || '').toLowerCase();
+      const idx = name.indexOf('·');
+      const region = idx >= 0 ? name.slice(idx + 1).trim().toLowerCase() : 'não informado';
+      const matchQ = !q || name.includes(q) || tech.includes(q) || region.includes(q);
+      const matchReg = regSel === 'todas' || region === regSel;
+      const matchTech = techSel === 'todos' || tech === techSel;
+      return matchQ && matchReg && matchTech;
+    });
+  },
+  _atn2Counts(filtered) {
+    let critAlta = 0, medio = 0, estavel = 0, nd = 0;
+    filtered.forEach(it => {
+      const p = String(it.priority || '').toLowerCase();
+      if (p === 'critica' || p === 'alta') critAlta++;
+      else if (p === 'media') medio++;
+      else if (p === 'leve') estavel++;
+      else if (p === 'nd') nd++;
+    });
+    const pctCritAlta = filtered.length ? Math.round((critAlta / filtered.length) * 100) : 0;
+    const thermo = this._atn2ThermoStats(filtered);
+    return { critAlta, medio, estavel, nd, total: filtered.length, pctCritAlta, thermoPct: thermo.pct, thermoAvgDbm: thermo.avgDbm, thermoDbmCount: thermo.count };
+  },
+  _atn2LaneDotColor(color) {
+    const c = String(color || '').toLowerCase();
+    if (c === 'red') return '#ef4444';
+    if (c === 'amber') return '#f59e0b';
+    if (c === 'blue') return '#2563eb';
+    if (c === 'green') return '#22c55e';
+    return 'rgba(255,255,255,.35)';
+  },
+  _atn2LaneCountColor(color) {
+    const c = String(color || '').toLowerCase();
+    if (c === 'red') return 'var(--danger)';
+    if (c === 'amber') return 'var(--warning)';
+    if (c === 'blue') return 'var(--info)';
+    if (c === 'green') return 'var(--green)';
+    return 'var(--white4)';
+  },
+
+  _atn2RenderSkeleton(root, st, counts, regions, techs) {
+    const thermoLeft = this._atn2Clamp(counts.thermoPct, 0, 100);
+    const accent = this._atn2ThermoAccent(thermoLeft);
+    const avgTxt = Number.isFinite(Number(counts.thermoAvgDbm))
+      ? `${this._atn2FormatDbm(counts.thermoAvgDbm)} dBm (média)`
+      : 'Sem dBm';
+    root.innerHTML = `
+      <div class="atn2-metrics">
+        <div class="atn2-card atn2-metric">
+          <div class="atn2-metric-label">Crítico / Alto</div>
+          <div class="atn2-metric-value" style="color:var(--danger)">${counts.critAlta}</div>
+          <div class="atn2-metric-sub">P0 + P1</div>
+        </div>
+        <div class="atn2-card atn2-metric">
+          <div class="atn2-metric-label">Médio</div>
+          <div class="atn2-metric-value" style="color:var(--warning)">${counts.medio}</div>
+          <div class="atn2-metric-sub">P2</div>
+        </div>
+        <div class="atn2-card atn2-metric">
+          <div class="atn2-metric-label">Estável</div>
+          <div class="atn2-metric-value" style="color:var(--green)">${counts.estavel}</div>
+          <div class="atn2-metric-sub">P3</div>
+        </div>
+        <div class="atn2-card atn2-metric">
+          <div class="atn2-metric-label">Sem leitura (N/D)</div>
+          <div class="atn2-metric-value" style="color:var(--white2)">${counts.nd}</div>
+          <div class="atn2-metric-sub">N/D</div>
+        </div>
+      </div>
+
+      <div class="atn2-card atn2-thermo">
+        <div class="thermo-header">
+          <span class="thermo-title">Termômetro de atenuação</span>
+          <span class="thermo-stats" id="thermo-stats">
+            ${counts.total} itens · ${counts.pctCritAlta}% crítico/alto · Indicador posicionado na média atual
+          </span>
+        </div>
+
+        <div class="thermo-bar-wrapper" aria-label="Termômetro de atenuação">
+          <div class="thermo-needle" id="thermo-needle" style="left:${thermoLeft}%"></div>
+        </div>
+
+        <div class="thermo-labels">
+          <span>Estável &lt;-22 dBm</span>
+          <span class="hide-mobile">Leve -24–-22</span>
+          <span class="hide-mobile">Média -26–-24</span>
+          <span class="hide-mobile">Alta -28–-26</span>
+          <span>Crítica &gt;-28 dBm</span>
+        </div>
+      </div>
+
+      <div class="atn2-main">
+        <div class="atn2-card atn2-left">
+          <div class="atn2-panel-head">
+            <div class="atn2-panel-title">Caixas com pendências</div>
+            <div class="atn2-panel-actions">
+              <span class="atn2-count" id="atn2ListCount">${counts.total} itens</span>
+              <div class="atn2-actions">
+                <button class="atn2-refresh" id="atn2RefreshBtn" aria-label="Atualizar">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+                <button class="atn2-primary" id="atn2NewBtn" type="button">+ Nova correção</button>
+              </div>
+            </div>
+          </div>
+          <div class="atn2-filters">
+            <input class="atn2-input" id="atn2Search" type="search" placeholder="Buscar CTO, bairro ou técnico…" value="${this._atn2Escape(st.search)}" />
+            <div class="atn2-row-2">
+              <select class="atn2-select" id="atn2Region">
+                ${regions.map(r => `<option value="${this._atn2Escape(r)}"${String(st.region) === String(r) ? ' selected' : ''}>${r === 'todas' ? 'Todas as regiões' : this._atn2Escape(r)}</option>`).join('')}
+              </select>
+              <select class="atn2-select" id="atn2Tech">
+                ${techs.map(t => `<option value="${this._atn2Escape(t)}"${String(st.tech) === String(t) ? ' selected' : ''}>${t === 'todos' ? 'Todos os técnicos' : this._atn2Escape(t)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="atn2-list" id="atn2List"></div>
+        </div>
+
+        <div class="atn2-right atn2-side">
+          <div class="atn2-card">
+            <div class="atn2-panel-head">
+              <div class="atn2-panel-title">Faixas de Atenuação</div>
+              <span class="atn2-count">Resumo</span>
+            </div>
+            <div class="atn2-side-body" id="atn2Lanes"></div>
+          </div>
+          <div class="atn2-card">
+            <div class="atn2-panel-head">
+              <div class="atn2-panel-title">Atividade Recente</div>
+              <span class="atn2-count">Hoje</span>
+            </div>
+            <div class="atn2-side-body" id="atn2Activities"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="atn2-modal" id="atn2Modal" aria-hidden="true">
+        <div class="atn2-modal-panel" role="dialog" aria-modal="true" aria-label="Nova correção">
+          <div class="atn2-modal-head">
+            <div class="atn2-modal-title">Nova correção</div>
+            <button class="atn2-btn" id="atn2CloseModalBtn" type="button">Fechar</button>
+          </div>
+          <div class="atn2-modal-body">
+            <div class="form-group">
+              <label for="atn2ModalName">Nome / CTO</label>
+              <input class="atn2-input" id="atn2ModalName" type="text" placeholder="CTO-00 · Nova caixa" />
+            </div>
+            <div class="form-group">
+              <label for="atn2ModalDbm">Atenuação (dBm)</label>
+              <input class="atn2-input" id="atn2ModalDbm" type="text" placeholder="-27.0" />
+            </div>
+            <div class="atn2-modal-row2">
+              <div class="form-group">
+                <label for="atn2ModalTech">Técnico</label>
+                <select class="atn2-select" id="atn2ModalTech">
+                  <option value="Junin">Junin</option>
+                  <option value="Marcos">Marcos</option>
+                  <option value="Leandro">Leandro</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="atn2-modal-foot">
+            <button class="atn2-btn" id="atn2CancelBtn" type="button">Cancelar</button>
+            <button class="atn2-primary" id="atn2ConfirmBtn" type="button">Confirmar</button>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  _atn2RenderList(root, items) {
+    if (!root) return;
+    if (!items.length) {
+      root.innerHTML = `<div class="calendar-empty" style="padding:18px 10px;margin:0">Nenhuma caixa encontrada com os filtros atuais.</div>`;
+      return;
+    }
+    root.innerHTML = items.map(it => {
+      const meta = this._atn2PriorityMeta(it.priority);
+      const dbm = it.dbm ? `${this._atn2FormatDbm(it.dbm)} dBm` : 'N/D';
+      const status = String(it.status || 'Criada');
+      const statusPill = `<span class="atn2-pill">${this._atn2Escape(status)}</span>`;
+      const prioPill = `<span class="atn2-pill" style="background:${meta.badgeBg};border-color:${meta.badgeBg};color:${meta.badgeText}">${this._atn2Escape(meta.label)}</span>`;
+      const initials = String(it.techInitials || '').trim() || Utils.getInitials(String(it.tech || '—'));
+      const avatar = `<span class="atn2-avatar" style="${this._atn2TechAvatarStyle(it.techColor)}">${this._atn2Escape(initials)}</span>`;
+      const openBtn = `<button type="button" class="atn2-btn atn2-open" data-atn2-open="${Number(it.id) || 0}">Abrir</button>`;
+      return `
+        <div class="atn2-cto" data-atn2-item="${Number(it.id) || 0}">
+          <span class="atn2-cto-leftbar" style="background:${meta.border}"></span>
+          ${openBtn}
+          <div class="atn2-cto-top">
+            <div class="atn2-cto-name">${this._atn2Escape(it.name)}</div>
+            <div class="atn2-cto-dbm" style="color:${meta.value}">${this._atn2Escape(dbm)}</div>
+          </div>
+          <div class="atn2-cto-bottom">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${prioPill}${statusPill}</div>
+            <div style="display:flex;align-items:center;gap:8px">${avatar}<span style="color:var(--white2);font-size:12px">${this._atn2Escape(it.tech)}</span></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  _atn2RenderLanes(root, lanes) {
+    if (!root) return;
+    root.innerHTML = lanes.map(l => {
+      const dot = this._atn2LaneDotColor(l.color);
+      const countColor = this._atn2LaneCountColor(l.color);
+      const pct = l.max ? Math.round((Number(l.count) / Number(l.max)) * 100) : 0;
+      return `
+        <div class="atn2-lane-row">
+          <span class="atn2-dot" style="background:${dot}"></span>
+          <div class="atn2-lane-main">
+            <div class="atn2-lane-head">
+              <div class="atn2-lane-name">${this._atn2Escape(l.label)}</div>
+              <div style="color:${countColor};font-family:var(--font-mono);font-weight:900">${Number(l.count) || 0}</div>
+            </div>
+            <div class="atn2-lane-range">${this._atn2Escape(l.range)}</div>
+            <div class="atn2-mini-track"><div class="atn2-mini-fill" style="background:${dot};width:${pct}%"></div></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  _atn2RenderActivities(root, acts) {
+    if (!root) return;
+    const dot = (c) => this._atn2LaneDotColor(c === 'red' ? 'red' : c === 'amber' ? 'amber' : c === 'blue' ? 'blue' : 'green');
+    root.innerHTML = acts.map(a => `
+      <div class="atn2-activity-item">
+        <div class="atn2-activity-top">
+          <span class="atn2-dot" style="background:${dot(a.color)}"></span>
+          <div style="min-width:0;flex:1">
+            <div class="atn2-activity-text">${this._atn2Escape(a.text)}</div>
+            <div class="atn2-activity-sub">${this._atn2Escape(a.time)} · ${this._atn2Escape(a.tech)}</div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  },
+
+  _atn2OpenModal() {
+    const m = document.getElementById('atn2Modal');
+    if (!m) return;
+    m.classList.add('open');
+    m.setAttribute('aria-hidden', 'false');
+    document.getElementById('atn2ModalName')?.focus?.();
+  },
+  _atn2CloseModal() {
+    const m = document.getElementById('atn2Modal');
+    if (!m) return;
+    m.classList.remove('open');
+    m.setAttribute('aria-hidden', 'true');
+  },
+
+  _bindAtenuacaoDashboardEventsOnce(root) {
+    if (!root || root.dataset.boundAtn2) return;
+    root.dataset.boundAtn2 = '1';
+
+    const rerender = () => this.renderAtenuacaoDashboardPage();
+
+    root.addEventListener('click', (e) => {
+      const t = e.target;
+      const open = t?.closest?.('[data-atn2-open]');
+      if (open) {
+        e.preventDefault();
+        this._atn2OpenModal();
+        return;
+      }
+      const card = t?.closest?.('[data-atn2-item]');
+      if (card) {
+        e.preventDefault();
+        this._atn2OpenModal();
+        return;
+      }
+      if (t?.closest?.('#atn2NewBtn')) {
+        e.preventDefault();
+        this._atn2OpenModal();
+        return;
+      }
+      if (t?.closest?.('#atn2CloseModalBtn') || t?.closest?.('#atn2CancelBtn')) {
+        e.preventDefault();
+        this._atn2CloseModal();
+        return;
+      }
+      if (t?.closest?.('#atn2ConfirmBtn')) {
+        e.preventDefault();
+        const name = String(document.getElementById('atn2ModalName')?.value || '').trim() || 'CTO-00 · Nova caixa';
+        const dbmEl = document.getElementById('atn2ModalDbm');
+        const dbmNorm = this._atn2NormalizeNegativeDbmInput(dbmEl?.value);
+        if (dbmEl && dbmNorm !== String(dbmEl.value || '')) dbmEl.value = dbmNorm;
+        const dbm = Number(String(dbmNorm || '').replace(',', '.')) || 0;
+        const tech = String(document.getElementById('atn2ModalTech')?.value || 'Junin');
+        const idx = name.indexOf('·');
+        const titulo = (idx >= 0 ? name.slice(0, idx) : name).trim() || 'Nova correção';
+        const regiao = (idx >= 0 ? name.slice(idx + 1) : '').trim();
+        const atenuacaoDb = Number.isFinite(dbm) ? (dbm > 0 ? -dbm : dbm) : 0;
+        const prio = this._atn2PriorityFromDbm(atenuacaoDb);
+        // Persiste no Store como OpTask real (fonte da UI em tempo real)
+        Store.addOpTask({
+          categoria: 'correcao-atenuacao',
+          titulo,
+          regiao,
+          responsavel: tech,
+          prioridade: prio,
+          status: 'Criada',
+          descricao: atenuacaoDb ? `Atenuação: ${atenuacaoDb} dBm` : 'Atenuação: N/D',
+          atenuacaoDb,
+        });
+        this._atn2CloseModal();
+        rerender();
+        ToastService.show('Correção criada.', 'success');
+        return;
+      }
+      if (t?.closest?.('#atn2RefreshBtn')) {
+        e.preventDefault();
+        const btn = document.getElementById('atn2RefreshBtn');
+        btn?.classList.remove('atn2-spin');
+        void btn?.offsetWidth;
+        btn?.classList.add('atn2-spin');
+        setTimeout(() => btn?.classList.remove('atn2-spin'), 700);
+        ToastService.show('Lista atualizada.', 'info');
+        return;
+      }
+    });
+
+    root.addEventListener('input', (e) => {
+      const el = e.target;
+      if (el?.id === 'atn2Search') {
+        this._atn2State.search = String(el.value || '');
+        rerender();
+      }
+      if (el?.id === 'atn2ModalDbm') {
+        const next = this._atn2NormalizeNegativeDbmInput(el.value);
+        if (next !== el.value) {
+          const pos = el.selectionStart;
+          el.value = next;
+          try { el.setSelectionRange(pos, pos); } catch {}
+        }
+      }
+    });
+    root.addEventListener('change', (e) => {
+      const el = e.target;
+      if (el?.id === 'atn2Region') {
+        this._atn2State.region = String(el.value || 'todas');
+        rerender();
+      }
+      if (el?.id === 'atn2Tech') {
+        this._atn2State.tech = String(el.value || 'todos');
+        rerender();
+      }
+    });
+
+    // Fecha modal ao clicar fora do painel
+    root.addEventListener('click', (e) => {
+      const modal = e.target?.closest?.('#atn2Modal');
+      if (modal && e.target === modal) this._atn2CloseModal();
+    });
+  },
+
+  renderAtenuacaoDashboardPage() {
+    const root = document.getElementById('atn2Root');
+    if (!root) return;
+    this._bindAtenuacaoDashboardEventsOnce(root);
+    const st = this._atn2State;
+
+    // Seed leve para teste do termômetro (não duplica; só quando vazio)
+    try {
+      const seedKey = 'planner.atn2.seeded.v1';
+      const hasSeeded = localStorage.getItem(seedKey) === '1';
+      const existing =
+        (Store.getOpTasksByCategory('correcao-atenuacao') || []).length +
+        (Store.getOpTasksByCategory('correcao_atenuacao') || []).length;
+      if (!hasSeeded && existing === 0) {
+        const samples = [
+          { titulo: 'CTO-01', regiao: 'Goval', responsavel: 'Junin', atenuacaoDb: -22.5 },
+          { titulo: 'CTO-02', regiao: 'Vale do Aço', responsavel: 'Marcos', atenuacaoDb: -24.5 },
+          { titulo: 'CTO-03', regiao: 'Caratinga', responsavel: 'Leandro', atenuacaoDb: -26.8 },
+          { titulo: 'CTO-04', regiao: 'Backup', responsavel: 'Junin', atenuacaoDb: -29.2 },
+        ];
+        samples.forEach((s) => {
+          const db = Number(s.atenuacaoDb);
+          const atenuacaoDb = Number.isFinite(db) ? (db > 0 ? -db : db) : 0;
+          const prio = this._atn2PriorityFromDbm(atenuacaoDb);
+          Store.addOpTask({
+            categoria: 'correcao-atenuacao',
+            titulo: `${s.titulo} · ${s.regiao}`,
+            regiao: s.regiao,
+            responsavel: s.responsavel,
+            prioridade: prio,
+            status: 'Criada',
+            descricao: `Atenuação: ${atenuacaoDb} dBm`,
+            atenuacaoDb,
+          });
+        });
+        localStorage.setItem(seedKey, '1');
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // Atualiza dados em tempo real com base no Store
+    st.items = this._atn2ItemsFromStore();
+
+    const regions = this._atn2RegionsFromItems(st.items);
+    const techs = this._atn2TechsFromItems(st.items);
+    const filtered = this._atn2FilterItems(st.items, st);
+    const counts = this._atn2Counts(filtered);
+    this._atn2RenderSkeleton(root, st, counts, regions, techs);
+    // Integração do componente: agulha + stats (sem alterar a lógica do percent)
+    updateThermometer(counts.thermoAvgDbm);
+    updateStats(counts.total, counts.pctCritAlta, counts.thermoAvgDbm);
+    this._atn2RenderList(document.getElementById('atn2List'), filtered);
+
+    // Faixas calculadas em tempo real
+    const laneCounts = { p0: 0, p1: 0, p2: 0, p3: 0, mon: 0, unknown: 0 };
+    filtered.forEach((it) => {
+      const p = String(it.priority || '').toLowerCase();
+      if (p === 'critica') laneCounts.p0++;
+      else if (p === 'alta') laneCounts.p1++;
+      else if (p === 'media') laneCounts.p2++;
+      else if (p === 'leve') laneCounts.p3++;
+      else laneCounts.unknown++;
+    });
+    const max = Math.max(1, laneCounts.p0, laneCounts.p1, laneCounts.p2, laneCounts.p3, laneCounts.mon, laneCounts.unknown);
+    const lanes = [
+      { key: 'p0', label: 'P0 · Crítica', range: 'Pior que -28 dBm', count: laneCounts.p0, max, color: 'red' },
+      { key: 'p1', label: 'P1 · Alta', range: '-28 a -26 dBm', count: laneCounts.p1, max, color: 'amber' },
+      { key: 'p2', label: 'P2 · Média', range: '-26 a -24 dBm', count: laneCounts.p2, max, color: 'blue' },
+      { key: 'p3', label: 'P3 · Leve', range: '-24 a -22.01 dBm', count: laneCounts.p3, max, color: 'green' },
+      { key: 'unk', label: 'N/D', range: 'Sem leitura', count: laneCounts.unknown, max, color: 'gray' },
+    ];
+    this._atn2RenderLanes(document.getElementById('atn2Lanes'), lanes);
+    this._atn2RenderActivities(document.getElementById('atn2Activities'), []);
+
+    // Timer de "tempo real" (sem duplicar intervalos)
+    if (!this._atn2LiveTimer) {
+      this._atn2LiveTimer = setInterval(() => {
+        if (Store.currentPage !== 'correcao-atenuacao') {
+          clearInterval(this._atn2LiveTimer);
+          this._atn2LiveTimer = null;
+          return;
+        }
+        const modalOpen = document.getElementById('atn2Modal')?.classList?.contains?.('open');
+        if (modalOpen) return;
+        const ae = document.activeElement;
+        const aeId = ae && typeof ae.id === 'string' ? ae.id : '';
+        if (aeId && (aeId === 'atn2Search' || aeId === 'atn2Region' || aeId === 'atn2Tech' || aeId.startsWith('atn2Modal'))) return;
+        this.renderAtenuacaoDashboardPage();
+      }, 1000);
+    }
+  },
+
+  // Atenuação em dBm (valores negativos): quanto MAIS negativo, mais crítico.
+  // Faixas fornecidas: leve (-22.01..-24), média (-24.01..-26), alta (-26.01..-28), crítica (< -28).
+  // Implementação usa pontos de corte:
+  // p0 <= -28.00
+  // p1 <= -26.00 (até -28.00)
+  // p2 <= -24.00 (até -26.00)
+  // p3 <= -22.01 (até -24.00)
+  // mon > -22.01
+  _ATN_THRESHOLDS_DEFAULT: { p0: -28.0, p1: -26.0, p2: -24.0, p3: -22.01 },
+  _atnParseDbFromText(text) {
+    const s = String(text || '');
+    if (!s) return null;
+    // Aceita "-22.01 dBm" / "-28 dB" etc.
+    const m = s.match(/(-?\d{1,3}(?:[.,]\d{1,2})?)\s*d\s*b\s*m?\b/i);
+    if (!m) return null;
+    const n = Number(String(m[1]).replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  },
+  _atnDb(task) {
+    if (!task || typeof task !== 'object') return null;
+    const direct =
+      task.atenuacaoDb ??
+      task.atenuacaoDB ??
+      task.atenuacao ??
+      task.db ??
+      task.dB ??
+      task.atnDb ??
+      null;
+    const n = Number(direct);
+    if (Number.isFinite(n)) return n;
+    // Fallback: tenta ler “xx dB” de campos comuns
+    return (
+      this._atnParseDbFromText(task.titulo) ??
+      this._atnParseDbFromText(task.descricao) ??
+      this._atnParseDbFromText(task.setor) ??
+      this._atnParseDbFromText(task.localizacaoTexto) ??
+      null
+    );
+  },
+  _atnBucketForDb(db, thresholds = this._ATN_THRESHOLDS_DEFAULT) {
+    if (!Number.isFinite(db)) return 'unknown';
+    // Mais negativo = pior (P0 mais crítico)
+    if (db <= thresholds.p0) return 'p0'; // crítico: pior que -28.00
+    if (db <= thresholds.p1) return 'p1'; // alta: <= -26.00 e > -28.00
+    if (db <= thresholds.p2) return 'p2'; // média: <= -24.00 e > -26.00
+    if (db <= thresholds.p3) return 'p3'; // leve: <= -22.00 e > -24.00
+    return 'mon';
+  },
+  _atnOverrideBucket(task) {
+    const v = String(task?.atnBucketOverride || '').trim().toLowerCase();
+    if (!v) return '';
+    if (v === 'p0' || v === 'p1' || v === 'p2' || v === 'p3' || v === 'mon') return v;
+    return '';
+  },
+  _atnBucketForTask(task, thresholds = this._ATN_THRESHOLDS_DEFAULT) {
+    const override = this._atnOverrideBucket(task);
+    if (override) return override;
+    const db = this._atnDb(task);
+    return this._atnBucketForDb(db, thresholds);
+  },
+  _bindAtenuacaoRadarEvents() {
+    const page = document.getElementById('page-correcao-atenuacao');
+    if (!page || page.dataset.boundAtenuacaoRadar) return;
+    page.dataset.boundAtenuacaoRadar = '1';
+
+    const rerender = () => this.renderAtenuacaoRadarPage();
+
+    page.querySelector('#atnRefreshBtn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      rerender();
+    });
+    page.querySelector('#atnNewTaskBtn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      Controllers?.opTask?.openNewModal?.({ category: 'correcao-atenuacao' });
+    });
+
+    page.querySelector('#atnSearchInput')?.addEventListener('input', rerender);
+    page.querySelector('#atnRegionSelect')?.addEventListener('change', rerender);
+    page.querySelector('#atnTecnicoInput')?.addEventListener('input', rerender);
+
+    page.querySelector('#atnRadarBoard')?.addEventListener('click', (e) => {
+      const openBtn = e.target.closest?.('[data-atn-open-op]');
+      if (openBtn) {
+        e.preventDefault();
+        const id = Number(openBtn.dataset.atnOpenOp || 0);
+        if (id) Controllers?.opTask?.openEditModal?.(id);
+        return;
+      }
+    });
+  },
+
+  renderAtenuacaoRadarPage() {
+    this._bindAtenuacaoRadarEvents();
+
+    const board = document.getElementById('atnRadarBoard');
+    const createdList = document.getElementById('atnCreatedList');
+    if (!board || !createdList) return;
+
+    // Animação leve ao re-renderizar (melhora sensação de responsividade)
+    board.classList.remove('atn-anim-refresh');
+    createdList.classList.remove('atn-anim-refresh');
+    void board.offsetWidth;
+    board.classList.add('atn-anim-refresh');
+    createdList.classList.add('atn-anim-refresh');
+
+    const q = String(document.getElementById('atnSearchInput')?.value || '').trim().toLowerCase();
+    const region = String(document.getElementById('atnRegionSelect')?.value || '').trim().toLowerCase();
+    const tech = String(document.getElementById('atnTecnicoInput')?.value || '').trim().toLowerCase();
+
+    const all = Store.getOpTasksByCategory('correcao-atenuacao') || [];
+    const filtered = all.filter((t) => {
+      const matchQ =
+        !q ||
+        String(t.titulo || '').toLowerCase().includes(q) ||
+        String(t.setor || '').toLowerCase().includes(q) ||
+        String(t.regiao || '').toLowerCase().includes(q) ||
+        String(t.responsavel || '').toLowerCase().includes(q) ||
+        String(t.descricao || '').toLowerCase().includes(q) ||
+        String(t.localizacaoTexto || '').toLowerCase().includes(q);
+      const matchRegion = !region || String(t.regiao || '').trim().toLowerCase() === region;
+      const matchTech = !tech || String(t.responsavel || '').trim().toLowerCase().includes(tech);
+      return matchQ && matchRegion && matchTech;
+    });
+
+    const thresholds = this._ATN_THRESHOLDS_DEFAULT;
+    const createdStatuses = new Set(['Criada', 'Backlog', 'A iniciar', 'Pendente']);
+    const createdTasks = [];
+    const activeTasks = [];
+    filtered.forEach((t) => {
+      const s = String(t.status || '').trim();
+      if (createdStatuses.has(s)) createdTasks.push(t);
+      else activeTasks.push(t);
+    });
+
+    const buckets = { p0: [], p1: [], p2: [], p3: [], mon: [], unknown: [] };
+    activeTasks.forEach((t) => {
+      const db = this._atnDb(t);
+      const key = this._atnBucketForTask(t, thresholds);
+      buckets[key].push({ ...t, _atnDb: db });
+    });
+
+    const sortWorstFirst = (a, b) => {
+      const da = Number.isFinite(a._atnDb) ? a._atnDb : -1;
+      const db = Number.isFinite(b._atnDb) ? b._atnDb : -1;
+      // Ordena do mais crítico (mais negativo) para o menos crítico.
+      if (da !== db) return da - db;
+      return String(a.prazo || a.dataEntrada || a.criadaEm || '').localeCompare(String(b.prazo || b.dataEntrada || b.criadaEm || ''));
+    };
+    Object.keys(buckets).forEach((k) => buckets[k].sort(sortWorstFirst));
+
+    const setText = (id, v) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(v);
+    };
+    // Contadores no topo foram removidos do layout; as contagens aparecem nos títulos das colunas.
+
+    const total = filtered.length;
+    const withDb = filtered.filter((t) => Number.isFinite(this._atnDb(t))).length;
+    const criticalLoad = Math.min(100, Math.round(((buckets.p0.length + buckets.p1.length) / Math.max(total, 1)) * 100));
+    const thermoFill = document.getElementById('atnThermoFill');
+    if (thermoFill) thermoFill.style.width = `${criticalLoad}%`;
+    const thermoLabel = document.getElementById('atnThermoLabel');
+    if (thermoLabel) thermoLabel.textContent = `${total} item(ns) · ${withDb} com dB identificado · ${criticalLoad}% crítico/alto`;
+
+    const fmtDb = (x) => {
+      if (!Number.isFinite(x)) return '—';
+      const v = Number(x);
+      // Remove zeros à direita comuns (ex.: -22.00 -> -22)
+      return String(v.toFixed(2)).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+    };
+
+    const createdCountEl = document.getElementById('atnCreatedCount');
+    if (createdCountEl) createdCountEl.textContent = String(createdTasks.length);
+
+    const createdSorted = [...createdTasks].map((t) => ({ ...t, _atnDb: this._atnDb(t) }));
+    createdSorted.sort((a, b) => {
+      const da = Number.isFinite(a._atnDb) ? a._atnDb : 999;
+      const db = Number.isFinite(b._atnDb) ? b._atnDb : 999;
+      // mais negativo (menor) primeiro
+      if (da !== db) return da - db;
+      return String(a.criadaEm || a.prazo || '').localeCompare(String(b.criadaEm || b.prazo || ''));
+    });
+
+    const renderCard = (t) => {
+      const dbVal = Number.isFinite(t._atnDb) ? `${fmtDb(t._atnDb)} dBm` : '— dBm';
+      const regionBadge = this.regionBadge(t.regiao);
+      const prioBadge = this.priorityBadge(t.prioridade || '');
+      const status = this.statusBadge(t.status || 'Criada');
+      const who = String(t.responsavel || '—').trim();
+      const titleText = String(t.setor || t.titulo || 'Correção de atenuação').trim() || 'Correção de atenuação';
+      const sub = String(t.localizacaoTexto || '').trim();
+      const copyBtn = Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(t), 'task-copy-id-btn--sm');
+      const override = this._atnOverrideBucket(t);
+      const overrideBadge = override ? `<span class="badge reg-unknown" title="Movido manualmente por arrastar e soltar">Manual</span>` : '';
+      const sevKey = this._atnBucketForTask(t, thresholds);
+      const sevClass = `atn-sev-${sevKey === 'unknown' ? 'unknown' : sevKey}`;
+      return `
+        <div class="kanban-card atn-draggable-card ${sevClass}" draggable="true" data-atn-drag-id="${Number(t.id) || 0}" style="position:relative">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+            <div style="min-width:0">
+              <div class="kanban-card-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
+                ${copyBtn}
+                <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(titleText)}</span>
+              </div>
+              ${sub ? `<div class="kanban-card-sub" style="color:var(--white4);font-size:12px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(sub)}</div>` : ''}
+            </div>
+            <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+              <div style="font-family:var(--font-mono);font-size:12px;color:var(--white2);padding:6px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.03)" title="Atenuação identificada">
+                ${dbVal}
+              </div>
+              <button type="button" class="sm-btn" data-atn-open-op="${Number(t.id) || 0}" aria-label="Abrir item">Abrir</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              ${status}
+              ${regionBadge}
+              ${prioBadge}
+              ${overrideBadge}
+            </div>
+            <div style="color:var(--white4);font-size:12px;display:flex;align-items:center;gap:8px">
+              <span style="display:inline-flex;align-items:center;gap:6px">
+                <span class="av-sm" style="background:${Utils.getAvatarColor(who)};color:#0a0c0a" aria-hidden="true">${Utils.getInitials(who)}</span>
+                ${Utils.escapeHtml(who)}
+              </span>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    createdList.innerHTML = createdSorted.length
+      ? createdSorted.map(renderCard).join('')
+      : `<div class="calendar-empty" style="padding:14px 10px;margin:0;">Sem itens criados no momento.</div>`;
+
+    const col = (key, title, hint, cls) => {
+      const list = buckets[key] || [];
+      const cards = list.length
+        ? list.map((t) => renderCard(t)).join('')
+        : `<div class="calendar-empty" style="padding:18px 10px;margin:0;">Sem itens nesta fila.</div>`;
+
+      const collapseKey = `atn:${key}`;
+      const colCollapsed = this._isKanbanCollapsedKey(collapseKey);
+
+      const toggleTitle = colCollapsed ? 'Expandir' : 'Recolher';
+      const toggleBtn = `
+        <button type="button"
+          class="kanban-col-toggle"
+          data-kanban-collapse="${Utils.escapeHtmlAttr(collapseKey)}"
+          data-kanban-col-label="${Utils.escapeHtmlAttr(title)}"
+          aria-expanded="${colCollapsed ? 'false' : 'true'}"
+          title="${toggleTitle} tarefas deste status"
+          aria-label="${toggleTitle} coluna ${Utils.escapeHtmlAttr(title)}">
+          <span class="kanban-col-toggle-chevron" aria-hidden="true">
+            <svg class="kanban-col-toggle-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </button>
+      `;
+
+      return `
+        <div class="kanban-col atn-col atn-sev-${Utils.escapeHtmlAttr(key === 'unknown' ? 'unknown' : key)} ${cls || ''}${colCollapsed ? ' kanban-col--collapsed' : ''}">
+          <div class="kanban-col-header">
+            ${toggleBtn}
+            <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+              <span class="kanban-col-title">${Utils.escapeHtml(title)}</span>
+              <div class="kanban-col-sub" style="color:var(--white4);font-size:12px;">${Utils.escapeHtml(hint || '')}</div>
+            </div>
+            <span class="kanban-col-count">${list.length}</span>
+          </div>
+          <div class="kanban-cards atn-drop-zone" data-atn-drop="${Utils.escapeHtmlAttr(key)}" aria-label="Solte aqui para mudar a prioridade">
+            ${cards}
+          </div>
+        </div>
+      `;
+    };
+
+    board.innerHTML = [
+      col('p0', 'P0 · Crítica', `Pior que ${fmtDb(thresholds.p0)} dBm`, ''),
+      col('p1', 'P1 · Alta', `${fmtDb(thresholds.p0)}–${fmtDb(thresholds.p1)} dBm`, ''),
+      col('p2', 'P2 · Média', `${fmtDb(thresholds.p1)}–${fmtDb(thresholds.p2)} dBm`, ''),
+      col('p3', 'P3 · Leve', `${fmtDb(thresholds.p2)}–${fmtDb(thresholds.p3)} dBm`, ''),
+      col('mon', 'Monitoramento', `Melhor que ${fmtDb(thresholds.p3)} dBm`, ''),
+      buckets.unknown.length ? col('unknown', 'Sem dB', 'Item sem atenuação identificada nos campos/texto', '') : '',
+    ].filter(Boolean).join('');
+
+    // Colapsar colunas do radar (igual ao kanban padrão)
+    board.onclick = (e) => {
+      const target = e?.target;
+      const toggle = target?.closest?.('.kanban-col-toggle');
+      if (!toggle || !board.contains(toggle)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const collapseKey = toggle.getAttribute('data-kanban-collapse') || '';
+      if (!collapseKey) return;
+      const nowCollapsed = this._toggleKanbanCollapsedKey(collapseKey);
+      this._applyKanbanColToggleUi(toggle, nowCollapsed);
+    };
+
+    // Drag & drop: mover item entre filas (override manual de prioridade)
+    const bindOnce = (el, key, fn) => {
+      if (!el || !key) return;
+      if (el.dataset[key]) return;
+      el.dataset[key] = '1';
+      fn();
+    };
+
+    const rootForDnD = document.getElementById('page-correcao-atenuacao');
+    rootForDnD?.querySelectorAll('.atn-draggable-card[data-atn-drag-id]').forEach((card) => {
+      bindOnce(card, 'atnDragBound', () => {
+        card.addEventListener('dragstart', (e) => {
+          const id = Number(card.dataset.atnDragId || 0);
+          if (!id) return;
+          card.classList.add('dragging');
+          try {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', String(id));
+          } catch {
+            /* ignore */
+          }
+        });
+        card.addEventListener('dragend', () => {
+          card.classList.remove('dragging');
+          rootForDnD?.querySelectorAll('.atn-drop-zone.drag-over').forEach((z) => z.classList.remove('drag-over'));
+        });
+      });
+    });
+
+    rootForDnD?.querySelectorAll('.atn-drop-zone[data-atn-drop]').forEach((zone) => {
+      const targetBucket = String(zone.dataset.atnDrop || '').trim().toLowerCase();
+      if (!targetBucket || targetBucket === 'unknown') return;
+      bindOnce(zone, 'atnDropBound', () => {
+        zone.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try { e.dataTransfer.dropEffect = 'move'; } catch { /* ignore */ }
+          zone.classList.add('drag-over');
+        });
+        zone.addEventListener('dragleave', (e) => {
+          if (e.relatedTarget && zone.contains(e.relatedTarget)) return;
+          zone.classList.remove('drag-over');
+        });
+        zone.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          zone.classList.remove('drag-over');
+          let id = 0;
+          try {
+            id = Number(e.dataTransfer.getData('text/plain') || 0);
+          } catch {
+            id = 0;
+          }
+          if (!id) return;
+          const task = Store.findOpTask?.(id);
+          if (!task) return;
+          zone.classList.add('atn-drop-flash');
+          const isCreated = createdStatuses.has(String(task.status || '').trim());
+          if (targetBucket === 'created') {
+            // Volta para entrada
+            Store.updateOpTask(id, { status: 'Criada', atnBucketOverride: '', atnBucketOverrideAt: '' });
+            ToastService.show('Item movido para Entrada (Criadas).', 'success');
+            setTimeout(() => this.renderAtenuacaoRadarPage(), 120);
+            return;
+          }
+          // Organiza por faixa e tira da entrada
+          Store.updateOpTask(id, {
+            atnBucketOverride: targetBucket,
+            atnBucketOverrideAt: new Date().toISOString(),
+            ...(isCreated ? { status: 'Em andamento' } : {}),
+          });
+          setTimeout(() => this.renderAtenuacaoRadarPage(), 120);
+          ToastService.show(isCreated ? 'Organizado e iniciado (Em andamento).' : 'Faixa ajustada (arrastar e soltar).', 'success');
+        });
+      });
+    });
   },
 
   /** Página do menu lateral «Relatório»: rompimentos por região e por técnico. */
@@ -5192,6 +6246,10 @@ const Controllers = {
         'atendimento-cliente': 'ATD',
         'otimizacao-rede': 'NET',
         'certificacao-cemig': 'CEM',
+        'correcao-atenuacao': 'ATN',
+        'troca-etiqueta': 'ETQ',
+        'qualidade-potencia': 'QDP',
+        'manutencao-corretiva': 'MCR',
       };
       const prefix = prefixMap[category] || 'ROM';
       const count = Store.getOpTasks()
@@ -5210,6 +6268,10 @@ const Controllers = {
         'atendimento-cliente': 'ATD',
         'otimizacao-rede': 'NET',
         'certificacao-cemig': 'CEM',
+        'correcao-atenuacao': 'ATN',
+        'troca-etiqueta': 'ETQ',
+        'qualidade-potencia': 'QDP',
+        'manutencao-corretiva': 'MCR',
       };
       const prefix = prefixMap[task.categoria] || 'ROM';
       const regionPrefix = this._regionTaskPrefix(task?.regiao);

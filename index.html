@@ -142,6 +142,15 @@
         <span class="nav-label">Qualidade de potência</span>
       </button>
 
+      <button type="button" class="nav-item" data-page="manutencao-corretiva" aria-label="Manutenção corretiva">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M20 7h-7l-1-2H4a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+          <path d="M6 21h12"/>
+          <path d="M9 17h6"/>
+        </svg>
+        <span class="nav-label">Manutenção corretiva</span>
+      </button>
+
       <button type="button" class="nav-item" data-page="atendimento" aria-label="Atendimento ao cliente">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
           <path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z"/>
@@ -555,19 +564,10 @@
         </div>
       </section>
 
-      <!-- ═══ PAGE: CORREÇÃO DE ATENUAÇÃO (placeholder) ═══ -->
-      <section class="page app-placeholder-page" id="page-correcao-atenuacao" aria-label="Correção de atenuação">
-        <div class="panel page-placeholder-panel" role="region">
-          <div class="panel-header">
-            <div>
-              <span class="panel-title">Correção de atenuação</span>
-              <p class="page-placeholder-sub">Módulo em desenvolvimento</p>
-            </div>
-          </div>
-          <div class="page-placeholder-body">
-            <p class="page-placeholder-lead">Esta página está sendo criada.</p>
-            <p class="page-placeholder-text">Em breve você poderá registrar e acompanhar <strong>correções de atenuação</strong> neste painel.</p>
-          </div>
+      <!-- ═══ PAGE: CORREÇÃO DE ATENUAÇÃO (Radar) ═══ -->
+      <section class="page" id="page-correcao-atenuacao" aria-label="Correção de atenuação">
+        <div class="atn2-page" id="atn2Root" aria-label="Correção de Atenuação">
+          <!-- Renderizado via JS (UI.renderAtenuacaoDashboardPage) -->
         </div>
       </section>
 
@@ -599,6 +599,22 @@
           <div class="page-placeholder-body">
             <p class="page-placeholder-lead">Esta página está sendo criada.</p>
             <p class="page-placeholder-text">Em breve você poderá registrar e acompanhar <strong>qualidade de potência</strong> neste painel.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ PAGE: MANUTENÇÃO CORRETIVA (placeholder) ═══ -->
+      <section class="page app-placeholder-page" id="page-manutencao-corretiva" aria-label="Manutenção corretiva">
+        <div class="panel page-placeholder-panel" role="region">
+          <div class="panel-header">
+            <div>
+              <span class="panel-title">Manutenção corretiva</span>
+              <p class="page-placeholder-sub">Módulo em desenvolvimento</p>
+            </div>
+          </div>
+          <div class="page-placeholder-body">
+            <p class="page-placeholder-lead">Esta página está sendo criada.</p>
+            <p class="page-placeholder-text">Em breve você poderá registrar e acompanhar <strong>manutenções corretivas</strong> neste painel.</p>
           </div>
         </div>
       </section>
