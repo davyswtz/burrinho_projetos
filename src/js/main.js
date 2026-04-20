@@ -2075,10 +2075,12 @@ const TaskService = {
     const query  = Store.dashboardSearch;
 
     return this.getAllDashboardTasks().filter(t => {
+      const monthStart = Utils.addDaysIso(-30);
       const matchFilter =
         filter === 'all' ||
         (filter === 'today' && t.prazo === tod) ||
-        (filter === 'week' && t.prazo && t.prazo >= week.start && t.prazo <= week.end);
+        (filter === 'week' && t.prazo && t.prazo >= week.start && t.prazo <= week.end) ||
+        (filter === 'month' && t.prazo && t.prazo >= monthStart && t.prazo <= tod);
       const matchSearch = !query ||
         t.titulo.toLowerCase().includes(query) ||
         t.responsavel.toLowerCase().includes(query) ||
@@ -2820,32 +2822,53 @@ const UI = {
 
   /* ── Dashboard Stats ────────────────────────────────────── */
   renderDashboardStats() {
-    const counts = TaskService.getCounts();
-    const setText = (id, value) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = String(value);
-    };
-    setText('count-pending', counts.pending);
-    setText('count-progress', counts.progress);
-    setText('count-done', counts.done);
-    setText('count-late', counts.late);
-    setText('sub-pending', `${counts.total} total`);
-    setText('sub-progress', counts.progress ? 'Em execução' : 'Nenhuma ativa');
-    setText('sub-done', counts.done ? 'Finalizadas' : 'Nenhuma ainda');
-    setText('sub-late', counts.late ? 'Atenção necessária' : 'Tudo em dia');
-
-    const badgeLate = document.getElementById('badge-late');
-    if (badgeLate) {
-      badgeLate.textContent = String(counts.late);
-      badgeLate.style.display = counts.late ? 'inline' : 'none';
-    }
+    window.PlannerDashboard?.syncFromStore?.();
   },
 
   /* ── Dashboard Task Table ───────────────────────────────── */
   renderTaskTable() {
+    const listRoot = document.getElementById('plannerDashTaskList');
+    const list = TaskService.getFilteredTasks();
+    const tod = Utils.todayIso();
+
+    const plannerStatusKey = t => {
+      const st = String(t.effectiveStatus || t.status || '');
+      if (st === 'Atrasada' || (t.prazo && t.prazo < tod && !['Concluída', 'Finalizada', 'Finalizado'].includes(st))) return 'urgente';
+      if (['Em andamento', 'Validação', 'Envio pendente', 'Necessário adequação'].some(x => st.includes(x))) return 'andamento';
+      if (['Concluída', 'Finalizada', 'Finalizado'].includes(st)) return 'concluida';
+      return 'pendente';
+    };
+
+    if (listRoot) {
+      if (!list.length) {
+        listRoot.innerHTML = `<li class="planner-task-item" style="cursor:default"><span></span><div class="planner-task-main"><div class="planner-task-name">Nenhuma tarefa no período</div></div></li>`;
+        return;
+      }
+      const pillMap = {
+        urgente: ['Urgente', 'planner-pill--urgente', 'planner-task-dot--urgente'],
+        pendente: ['Pendente', 'planner-pill--pendente', 'planner-task-dot--pendente'],
+        andamento: ['Andamento', 'planner-pill--andamento', 'planner-task-dot--andamento'],
+        concluida: ['Concluída', 'planner-pill--concluida', 'planner-task-dot--concluida'],
+      };
+      listRoot.innerHTML = list.slice(0, 8).map(t => {
+        const key = plannerStatusKey(t);
+        const [plab, pcls, dcls] = pillMap[key] || pillMap.pendente;
+        const isDone = key === 'concluida';
+        const nameStyle = isDone ? 'text-decoration:line-through;opacity:0.45' : '';
+        return `<li class="planner-task-item">
+          <span class="planner-task-dot ${dcls}" aria-hidden="true"></span>
+          <div class="planner-task-main">
+            <div class="planner-task-name" style="${nameStyle}">${Utils.escapeHtml(t.titulo)}</div>
+            <div class="planner-task-tech">${Utils.escapeHtml(t.responsavel || '—')}</div>
+          </div>
+          <span class="planner-pill ${pcls}">${plab}</span>
+        </li>`;
+      }).join('');
+      return;
+    }
+
     const tbody = document.getElementById('taskTableBody');
-    const list  = TaskService.getFilteredTasks();
-    const tod   = Utils.todayIso();
+    if (!tbody) return;
 
     if (!list.length) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="5">Nenhuma tarefa encontrada</td></tr>`;
@@ -3211,6 +3234,7 @@ const UI = {
       });
 
     const list = document.getElementById('agendaList');
+    if (!list) return;
     if (!agenda.length) {
       list.innerHTML = `<li class="agenda-item"><div><div class="agenda-desc">Nenhum item marcado para esta semana.</div><div class="agenda-time">Adicione tarefas ou anotações no calendário.</div></div></li>`;
       return;
@@ -3442,7 +3466,8 @@ const UI = {
     const opts = { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' };
     const date = d.toLocaleDateString('pt-BR', opts);
     const time = `${Utils.pad(d.getHours())}:${Utils.pad(d.getMinutes())}`;
-    document.getElementById('topbarDate').textContent = `${date} — ${time}`;
+    const dateEl = document.getElementById('topbarDate');
+    if (dateEl) dateEl.textContent = `${date} — ${time}`;
   },
 
   /* ── Page navigation ────────────────────────────────────── */
@@ -3527,6 +3552,10 @@ const UI = {
       sessionStorage.setItem(NAV_LAST_PAGE_KEY, page);
     } catch {
       /* ignore */
+    }
+
+    if (window.PlannerDashboard && page !== 'dashboard') {
+      window.PlannerDashboard._kpiAnimated = false;
     }
 
     // Re-renderiza página específica
@@ -5710,9 +5739,11 @@ const Controllers = {
     },
     _lock() {
       document.body.classList.add('auth-locked');
+      document.body.classList.remove('planner-dash-mode');
     },
     _unlock() {
       document.body.classList.remove('auth-locked');
+      document.body.classList.add('planner-dash-mode');
     },
     _finishLogin(displayName, userKeyRaw = '') {
       const name = String(displayName || '').trim() || 'Usuário';
@@ -5840,13 +5871,15 @@ const Controllers = {
         if (this._submitting) return;
         this._submitting = true;
         const submitBtn = document.getElementById('loginSubmitBtn');
-        const prevLabel = submitBtn ? submitBtn.textContent : '';
+        const submitLabel = document.getElementById('loginSubmitLabel');
+        const prevLabel = submitLabel ? submitLabel.textContent : submitBtn ? submitBtn.textContent : '';
         try {
           if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.setAttribute('aria-busy', 'true');
-            submitBtn.textContent = 'Entrando…';
           }
+          if (submitLabel) submitLabel.textContent = 'Entrando…';
+          else if (submitBtn) submitBtn.textContent = 'Entrando…';
           const user = document.getElementById('loginUser')?.value.trim();
           const pass = document.getElementById('loginPass')?.value.trim();
 
@@ -5859,10 +5892,25 @@ const Controllers = {
           if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.removeAttribute('aria-busy');
-            submitBtn.textContent = prevLabel || 'Entrar';
           }
+          if (submitLabel) submitLabel.textContent = prevLabel || 'ACESSAR SISTEMA';
+          else if (submitBtn) submitBtn.textContent = prevLabel || 'Entrar';
         }
       });
+
+      document.getElementById('loginForgotLink')?.addEventListener('click', e => {
+        e.preventDefault();
+        ToastService.show('Recuperação de senha não está disponível neste painel. Fale com o administrador.', 'info');
+      });
+      document.getElementById('loginSsoBtn')?.addEventListener('click', () => {
+        ToastService.show('SSO corporativo não configurado nesta instância.', 'info');
+      });
+
+      const verEl = document.getElementById('loginVersionLabel');
+      if (verEl) {
+        const b = window.APP_CONFIG && window.APP_CONFIG.appBuild ? String(window.APP_CONFIG.appBuild) : '';
+        verEl.textContent = b ? 'build ' + b : 'painel interno';
+      }
 
       document.getElementById('logoutBtn')?.addEventListener('click', () => this.logout());
     },
@@ -7551,7 +7599,7 @@ const Controllers = {
         });
       });
 
-      document.getElementById('searchInput').addEventListener('input', e => {
+      document.getElementById('searchInput')?.addEventListener('input', e => {
         Store.dashboardSearch = e.target.value.trim().toLowerCase();
         UI.renderTaskTable();
       });
