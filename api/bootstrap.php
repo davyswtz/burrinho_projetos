@@ -47,6 +47,8 @@ try {
         'plannerConfig' => $cfgMap['plannerConfig'] ?? ['note' => ''],
     ]);
 } catch (Throwable $e) {
-    jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
+    // FIX: não vazar detalhes internos; logar com contexto.
+    error_log('[bootstrap.php] failed: ' . $e->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'server_error'], 500);
 }
 

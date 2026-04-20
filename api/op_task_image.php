@@ -35,9 +35,16 @@ try {
     http_response_code(200);
     header('Content-Type: ' . $mime);
     header('Cache-Control: public, max-age=86400');
-    header('Access-Control-Allow-Origin: *');
+    // FIX: CORS conservador (sessão). Imagem deve ser consumida pelo mesmo domínio.
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    if ($host !== '') {
+        header('Access-Control-Allow-Origin: ' . $scheme . '://' . $host);
+        header('Vary: Origin');
+    }
     echo $row['image_data'];
     exit;
 } catch (Throwable $e) {
-    jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
+    error_log('[op_task_image.php] failed: ' . $e->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'server_error'], 500);
 }

@@ -11,13 +11,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
+    requireAuth();
+    requireSameOriginForMutation();
+
     $data = readJsonBody();
     $id = (int) ($data['id'] ?? 0);
     if ($id <= 0) {
         jsonResponse(['ok' => false, 'error' => 'id invalido'], 422);
     }
+    $titulo = trim((string) ($data['titulo'] ?? ''));
+    if ($titulo === '') {
+        jsonResponse(['ok' => false, 'error' => 'titulo invalido'], 422);
+    }
 
     $pdo = db();
+    // FIX: DATE vazia no MySQL pode virar 0000-00-00; usar NULL.
+    $prazoIn = trim((string) ($data['prazo'] ?? ''));
+    $prazoBind = ($prazoIn === '' || $prazoIn === '0000-00-00') ? null : $prazoIn;
     $sql = 'INSERT INTO tasks (id, titulo, responsavel, prazo, status, prioridade)
             VALUES (:id, :titulo, :responsavel, :prazo, :status, :prioridade)
             ON DUPLICATE KEY UPDATE
@@ -30,15 +40,17 @@ try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         ':id' => $id,
-        ':titulo' => (string) ($data['titulo'] ?? ''),
+        ':titulo' => $titulo,
         ':responsavel' => (string) ($data['responsavel'] ?? ''),
-        ':prazo' => (string) ($data['prazo'] ?? ''),
+        ':prazo' => $prazoBind,
         ':status' => (string) ($data['status'] ?? 'Pendente'),
         ':prioridade' => (string) ($data['prioridade'] ?? 'Média'),
     ]);
 
     jsonResponse(['ok' => true]);
 } catch (Throwable $e) {
-    jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
+    // FIX: não vazar detalhes internos; logar com contexto.
+    error_log('[tasks.php] save failed: ' . $e->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'server_error'], 500);
 }
 

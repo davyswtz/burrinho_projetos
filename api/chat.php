@@ -88,9 +88,8 @@ try {
         chatJsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
     }
 
-    if (empty($_SESSION['planner_user'])) {
-        chatJsonResponse(['ok' => false, 'error' => 'unauthorized'], 401);
-    }
+    requireAuth();
+    requireSameOriginForMutation();
 
     $data = readJsonBody();
     $userKey = strtolower(trim((string) ($data['userKey'] ?? '')));
@@ -134,6 +133,7 @@ try {
         'id' => $newId,
     ]);
 } catch (Throwable $e) {
+    error_log('[chat.php] failed: ' . $e->getMessage());
     $msg = $e->getMessage();
     if (
         stripos($msg, 'team_chat_message') !== false

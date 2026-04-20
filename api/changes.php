@@ -11,9 +11,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 }
 
 try {
-    if (empty($_SESSION['planner_user'])) {
-        jsonResponse(['ok' => false, 'error' => 'unauthorized'], 401);
-    }
+    requireAuth();
 
     $pdo = db();
     $since = isset($_GET['since']) ? (int) $_GET['since'] : 0;
@@ -72,6 +70,7 @@ try {
         'changedOpTasks' => $changedOpTasks,
     ]);
 } catch (Throwable $e) {
-    jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
+    error_log('[changes.php] failed: ' . $e->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'server_error'], 500);
 }
 

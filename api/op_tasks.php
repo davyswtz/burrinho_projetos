@@ -8,9 +8,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
-    if (empty($_SESSION['planner_user'])) {
-        jsonResponse(['ok' => false, 'error' => 'unauthorized'], 401);
-    }
+    requireAuth();
+    requireSameOriginForMutation();
 
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     if ($method === 'DELETE') {
@@ -143,7 +142,8 @@ try {
 
     jsonResponse(['ok' => true, 'descricao' => $finalDesc]);
 } catch (Throwable $e) {
-    // CORRIGIDO: não expor mensagens internas do PDO/SQL ao cliente
+    // FIX: não expor mensagens internas do PDO/SQL ao cliente; logar com contexto.
+    error_log('[op_tasks.php] failed: ' . $e->getMessage());
     jsonResponse(['ok' => false, 'error' => 'server_error'], 500);
 }
 

@@ -84,28 +84,12 @@ function getSignedUserName() {
   }
 }
 
-/**
- * Foto na barra lateral (circular). Por padrão usa o mascote do projeto em `assets/`.
- * Substitua por URL absoluta se preferir; vazio = só iniciais do usuário.
- * Opcional: `window.APP_CONFIG.sidebarAvatarUrl` em `config.js` sobrescreve isto.
- */
-const SIDEBAR_USER_AVATAR_URL = './assets/sidebar-mascote-projetos.png';
 const SESSION_USER_KEY = 'planner.session.userKey.v1';
 /** Última página do menu (sessionStorage) — após F5 ou novo login volta ao chat etc. */
 const NAV_LAST_PAGE_KEY = 'planner.nav.lastPage.v1';
 const CHAT_LAST_SEEN_ID_KEY = 'planner.chat.lastSeenId.v1';
 const CHAT_MENTION_INBOX_KEY = 'planner.chat.mentionInbox.v1';
 const CHAT_MENTION_HANDLED_IDS_KEY = 'planner.chat.mentionHandledIds.v1';
-const USER_AVATAR_MAP_KEY = 'planner.userAvatarByUser.v1';
-const GUEST_AVATAR_KEY = 'planner.avatar.guest.v1';
-const AVATAR_ASSET_OPTIONS = [
-  { id: 'asset-muted', label: 'Burrinho Muted', url: './assets/avatares/burrinho-muted.png' },
-  { id: 'asset-cabecudo', label: 'Burrinho Cabeçudo', url: './assets/avatares/burrinho-cabecudo.png' },
-  { id: 'asset-empresario', label: 'Burrinho Empresario', url: './assets/avatares/burrinho-empresario.jpg' },
-  { id: 'asset-cruzeirense', label: 'Burrinha Cruzeirense', url: './assets/avatares/burrinha-cruzeirense.png' },
-  { id: 'asset-dev', label: 'Burrinho Dev', url: './assets/avatares/burrinho-dev.png' },
-  { id: 'asset-panguao', label: 'Burrinho Panguao', url: './assets/avatares/burrinho-panguao.png' },
-];
 
 function isAuthenticatedSession() {
   try {
@@ -115,45 +99,12 @@ function isAuthenticatedSession() {
   }
 }
 
-function readGuestAvatar() {
-  try {
-    return String(localStorage.getItem(GUEST_AVATAR_KEY) || '').trim();
-  } catch {
-    return '';
-  }
-}
-
 function getSessionUserKey() {
   try {
     return String(localStorage.getItem(SESSION_USER_KEY) || '').trim().toLowerCase();
   } catch {
     return '';
   }
-}
-
-function readUserAvatarMap() {
-  try {
-    const raw = localStorage.getItem(USER_AVATAR_MAP_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function resolveSidebarAvatarUrl() {
-  const logged = isAuthenticatedSession();
-  const userKey = logged ? getSessionUserKey() : '';
-  if (userKey && logged) {
-    const byUser = readUserAvatarMap();
-    const userAvatar = String(byUser[userKey] || '').trim();
-    if (userAvatar) return userAvatar;
-  }
-  const guestAvatar = readGuestAvatar();
-  if (guestAvatar) return guestAvatar;
-  const fromConfig = window.APP_CONFIG && window.APP_CONFIG.sidebarAvatarUrl;
-  if (typeof fromConfig === 'string' && fromConfig.trim()) return fromConfig.trim();
-  return typeof SIDEBAR_USER_AVATAR_URL === 'string' ? SIDEBAR_USER_AVATAR_URL.trim() : '';
 }
 
 /** Sincronizado com `APP_CONFIG.appBuild` em `config.js`. A cada deploy novo, limpa caches do app. */
@@ -247,7 +198,7 @@ const Store = (() => {
   /**
    * Base da API: `APP_CONFIG.apiBaseUrl` (string), ou origem + pasta do app + `/api`.
    * Ex.: `https://site.com/burrinho/index.html` → `https://site.com/burrinho/api` (comum na HostGator).
-   * Em localhost não ativa automático — defina `apiBaseUrl` em `config.js` se precisar testar API local.
+   * Em ambientes locais, também tenta auto-resolver para `/api` quando servido via http(s).
    */
   const resolveApiBaseUrl = () => {
     const raw = APP_CONFIG.apiBaseUrl;
@@ -259,10 +210,6 @@ const Store = (() => {
     try {
       const { protocol, hostname, origin, pathname } = window.location;
       if (protocol !== 'http:' && protocol !== 'https:') return '';
-      const h = String(hostname || '').toLowerCase();
-      if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.local')) {
-        return '';
-      }
       const path = String(pathname || '/');
       let p = path;
       if (p !== '/' && p.endsWith('/')) p = p.replace(/\/+$/, '');
@@ -2356,6 +2303,515 @@ const CalendarService = {
 };
 
 /* ─────────────────────────────────────────────────────────────
+   CALENDAR (novo UI) — Design "cal-*" com dados reais
+   Reaproveita Store + TaskService + CalendarService (sem mudar backend).
+───────────────────────────────────────────────────────────── */
+const CalendarV2 = (() => {
+  const state = {
+    builtFilters: false,
+    search: '',
+    // filtros: quando true = filtra (mantém apenas correspondentes); quando false = ignora filtro
+    filters: {
+      rompimentos: true,
+      alta: true,
+      emAndamento: true,
+      manutencao: true,
+    },
+  };
+
+  const monthNames = [
+    'janeiro','fevereiro','março','abril','maio','junho',
+    'julho','agosto','setembro','outubro','novembro','dezembro',
+  ];
+  const daysShort = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const daysLong = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+
+  const el = (id) => document.getElementById(id);
+
+  const isoFromYMD = (y, m0, d) => `${String(y)}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+  const normalize = (s) => String(s || '').trim().toLowerCase();
+
+  const getOpTaskById = (id) => {
+    const list = Store.getOpTasks ? Store.getOpTasks() : [];
+    return Array.isArray(list) ? list.find(t => Number(t?.id) === Number(id)) : null;
+  };
+
+  const toEvent = (dateIso, item) => {
+    const isNote = item.source === 'note';
+    const op = item.isOpTask ? getOpTaskById(item.id) : null;
+    const categoriaRaw = op?.categoria ? String(op.categoria) : (item.source === 'dashboard' ? 'dashboard' : '');
+
+    const categoryLabel = (() => {
+      const c = normalize(categoriaRaw);
+      if (c === 'rompimentos') return 'Rompimentos';
+      if (c === 'manutencao-corretiva') return 'Manutenção';
+      if (c) return categoriaRaw;
+      if (isNote) return 'Anotação';
+      return item.sourceLabel || 'Tarefa';
+    })();
+
+    const coords = (() => {
+      const c = String(op?.coordenadas || '').trim();
+      const loc = String(op?.localizacaoTexto || '').trim();
+      if (c && loc) return `${c}\n${loc}`;
+      if (c) return c;
+      if (loc) return loc;
+      // fallback: mostrar região quando existir
+      const r = String(item.regiao || '').trim();
+      return r ? `Região: ${r}` : '';
+    })();
+
+    return {
+      id: item.id,
+      date: dateIso,
+      title: item.title || '',
+      category: categoryLabel,
+      priority: String(item.priority || 'Média'),
+      status: String(item.status || ''),
+      removable: Boolean(item.removable),
+      isOpTask: Boolean(item.isOpTask),
+      copyRef: String(item.copyRef || ''),
+      sourceLabel: String(item.sourceLabel || ''),
+      description: String(item.description || ''),
+      coords,
+      // para badge extra (ex.: tipo backup) — não existe no modelo atual, mas deixamos compatível
+      tipo: '',
+    };
+  };
+
+  const matchesFilters = (ev) => {
+    const q = normalize(state.search);
+    const passSearch = !q || normalize(ev.title).includes(q) || normalize(ev.category).includes(q) || normalize(ev.coords).includes(q);
+    if (!passSearch) return false;
+
+    const anyOn = Object.values(state.filters).some(Boolean);
+    if (!anyOn) return true;
+
+    let ok = true;
+    if (state.filters.rompimentos) ok = ok && normalize(ev.category) === 'rompimentos';
+    if (state.filters.manutencao) ok = ok && normalize(ev.category).includes('manuten');
+    if (state.filters.alta) ok = ok && normalize(ev.priority) === 'alta';
+    if (state.filters.emAndamento) ok = ok && normalize(ev.status) === 'em andamento';
+    return ok;
+  };
+
+  const eventsByDate = (dateIso) => CalendarService.getItemsByDate(dateIso).map(it => toEvent(dateIso, it)).filter(matchesFilters);
+
+  const renderTopbar = () => {
+    const monthDate = CalendarService.currentMonthDate;
+    const lbl = el('cal-month-label');
+    if (lbl) lbl.textContent = `${monthNames[monthDate.getMonth()]} de ${monthDate.getFullYear()}`;
+
+    const filterWrap = el('cal-filters');
+    if (filterWrap && !state.builtFilters) {
+      state.builtFilters = true;
+      const defs = [
+        { key: 'rompimentos', label: 'Rompimentos', color: 'blue' },
+        { key: 'alta', label: 'Alta', color: 'red' },
+        { key: 'emAndamento', label: 'Em andamento', color: 'green' },
+        { key: 'manutencao', label: 'Manutenção', color: 'amber' },
+      ];
+      filterWrap.innerHTML = '';
+      defs.forEach(d => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `cal-filter-pill cal-fp-${d.color} cal-fp-active`;
+        btn.textContent = d.label;
+        btn.addEventListener('click', () => {
+          state.filters[d.key] = !state.filters[d.key];
+          btn.classList.toggle('cal-fp-active');
+          renderAll();
+        });
+        filterWrap.appendChild(btn);
+      });
+    }
+  };
+
+  const renderMiniCal = () => {
+    const g = el('cal-mini-grid');
+    if (!g) return;
+    g.innerHTML = '';
+    ['D','S','T','Q','Q','S','S'].forEach(d => {
+      const h = document.createElement('div');
+      h.className = 'cal-mc-hdr';
+      h.textContent = d;
+      g.appendChild(h);
+    });
+
+    const monthDate = CalendarService.currentMonthDate;
+    const y = monthDate.getFullYear();
+    const m0 = monthDate.getMonth();
+    const firstDay = new Date(y, m0, 1).getDay();
+    const daysInMonth = new Date(y, m0 + 1, 0).getDate();
+    const prevDays = new Date(y, m0, 0).getDate();
+
+    for (let i = 0; i < firstDay; i++) {
+      const elDay = document.createElement('div');
+      elDay.className = 'cal-mc-day cal-mc-other';
+      elDay.textContent = String(prevDays - firstDay + 1 + i);
+      g.appendChild(elDay);
+    }
+
+    const todayIso = Utils.todayIso();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = isoFromYMD(y, m0, d);
+      const isToday = iso === todayIso;
+      const isSel = iso === CalendarService.selectedDateIso;
+      const hasEv = eventsByDate(iso).length > 0;
+      const elDay = document.createElement('div');
+      elDay.className =
+        'cal-mc-day' +
+        (isToday ? ' cal-mc-today' : '') +
+        (isSel && !isToday ? ' cal-mc-selected' : '') +
+        (hasEv ? ' cal-mc-has-ev' : '');
+      elDay.textContent = String(d);
+      elDay.addEventListener('click', () => {
+        CalendarService.selectedDateIso = iso;
+        renderAll();
+      });
+      g.appendChild(elDay);
+    }
+  };
+
+  const renderHeatmap = () => {
+    const g = el('cal-heatmap');
+    if (!g) return;
+    g.innerHTML = '';
+    const monthDate = CalendarService.currentMonthDate;
+    const y = monthDate.getFullYear();
+    const m0 = monthDate.getMonth();
+    const daysInMonth = new Date(y, m0 + 1, 0).getDate();
+    const firstDay = new Date(y, m0, 1).getDay();
+    const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+
+    for (let i = 0; i < totalCells; i++) {
+      const d = i - firstDay + 1;
+      const cell = document.createElement('div');
+      let count = 0;
+      if (d >= 1 && d <= daysInMonth) {
+        const iso = isoFromYMD(y, m0, d);
+        count = eventsByDate(iso).length;
+      }
+      const lvl = count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : count <= 4 ? 3 : 4;
+      cell.className = `cal-hm-cell cal-hm-${lvl}`;
+      cell.title = d >= 1 && d <= daysInMonth ? `Dia ${d}: ${count} evento(s)` : '';
+      g.appendChild(cell);
+    }
+  };
+
+  const renderStats = () => {
+    const todayIso = Utils.todayIso();
+    const monthDate = CalendarService.currentMonthDate;
+    const y = monthDate.getFullYear();
+    const m0 = monthDate.getMonth();
+    const daysInMonth = new Date(y, m0 + 1, 0).getDate();
+
+    let monthCount = 0;
+    let highCount = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = isoFromYMD(y, m0, d);
+      const evs = eventsByDate(iso);
+      monthCount += evs.length;
+      highCount += evs.filter(e => normalize(e.priority) === 'alta').length;
+    }
+    const todayCount = eventsByDate(todayIso).length;
+
+    if (el('stat-today')) el('stat-today').textContent = String(todayCount);
+    if (el('stat-high')) el('stat-high').textContent = String(highCount);
+    if (el('stat-month')) el('stat-month').textContent = String(monthCount);
+  };
+
+  const renderTimeline = () => {
+    const cont = el('cal-timeline-left');
+    if (!cont) return;
+    cont.innerHTML = '';
+    const todayIso = Utils.todayIso();
+    const evs = eventsByDate(todayIso).slice(0, 4);
+    if (!evs.length) {
+      cont.innerHTML = '<div style="font-size:11px;color:#374151">Nenhum evento hoje</div>';
+      return;
+    }
+    evs.forEach((ev, i) => {
+      const item = document.createElement('div');
+      item.className = 'cal-tl-item';
+      item.innerHTML =
+        '<div class="cal-tl-line">' +
+          `<div class="cal-tl-dot${i === 0 ? ' cal-tl-active' : ''}"></div>` +
+          (i < evs.length - 1 ? '<div class="cal-tl-connector"></div>' : '') +
+        '</div>' +
+        '<div class="cal-tl-label">' +
+          `<strong>${i === 0 ? 'Agora' : Utils.escapeHtml(ev.category || 'Evento')}</strong><br>` +
+          Utils.escapeHtml(Utils.truncateForCalendar(ev.title || '', 28)) +
+        '</div>';
+      cont.appendChild(item);
+    });
+  };
+
+  const renderGrid = () => {
+    const hdrs = el('cal-day-headers');
+    if (hdrs && !hdrs.dataset.built) {
+      hdrs.dataset.built = '1';
+      hdrs.innerHTML = '';
+      daysShort.forEach(d => {
+        const h = document.createElement('div');
+        h.className = 'cal-dh';
+        h.textContent = d;
+        hdrs.appendChild(h);
+      });
+    }
+
+    const g = el('cal-grid');
+    if (!g) return;
+    g.innerHTML = '';
+
+    const monthDate = CalendarService.currentMonthDate;
+    const y = monthDate.getFullYear();
+    const m0 = monthDate.getMonth();
+    const firstDay = new Date(y, m0, 1).getDay();
+    const daysInMonth = new Date(y, m0 + 1, 0).getDate();
+    const prevDays = new Date(y, m0, 0).getDate();
+    const todayIso = Utils.todayIso();
+
+    const createCell = (d, isOther) => {
+      const cell = document.createElement('div');
+      const iso = isOther ? '' : isoFromYMD(y, m0, d);
+      const isToday = !isOther && iso === todayIso;
+      const isSel = !isOther && iso === CalendarService.selectedDateIso;
+      cell.className =
+        'cal-cell' +
+        (isOther ? ' cal-cell-dim' : '') +
+        (isToday ? ' cal-cell-today' : '') +
+        (isSel ? ' cal-cell-selected' : '');
+
+      let html = `<div class="cal-dnum">${d}</div>`;
+      if (isToday) {
+        html += '<div class="cal-today-badge"><div class="cal-today-dot"></div><span>hoje</span></div>';
+      }
+      if (!isOther) {
+        const evs = eventsByDate(iso);
+        const max = isToday ? 3 : 2;
+        evs.slice(0, max).forEach(ev => {
+          const cls = (() => {
+            const p = normalize(ev.priority);
+            if (p === 'alta') return 'cal-ep-red';
+            if (p === 'media' || p === 'média') return 'cal-ep-amber';
+            const c = normalize(ev.category);
+            if (c.includes('manuten')) return 'cal-ep-amber';
+            if (c === 'rompimentos') return 'cal-ep-blue';
+            return 'cal-ep-green';
+          })();
+          html += `<div class="cal-ev-pill ${cls}">${Utils.escapeHtml(Utils.truncateForCalendar(ev.title || '', 26))}</div>`;
+        });
+        if (evs.length > max) {
+          html += `<div class="cal-overflow-tag">+${evs.length - max} mais</div>`;
+        }
+        if (evs.length > 0) {
+          const done = evs.filter(ev => {
+            const s = normalize(ev.status);
+            return s.includes('conclu') || s.includes('finaliz');
+          }).length;
+          const pct = Math.round((done / evs.length) * 100);
+          html += `<div class="cal-progress-bar"><div class="cal-progress-fill" style="width:${pct}%"></div></div>`;
+        }
+      }
+      cell.innerHTML = html;
+
+      if (!isOther) {
+        cell.addEventListener('click', () => {
+          CalendarService.selectedDateIso = iso;
+          renderAll();
+        });
+      }
+      return cell;
+    };
+
+    for (let i = 0; i < firstDay; i++) {
+      const d = prevDays - firstDay + 1 + i;
+      g.appendChild(createCell(d, true));
+    }
+    for (let d = 1; d <= daysInMonth; d++) g.appendChild(createCell(d, false));
+    const total = firstDay + daysInMonth;
+    const rest = total % 7 === 0 ? 0 : 7 - (total % 7);
+    for (let d = 1; d <= rest; d++) g.appendChild(createCell(d, true));
+  };
+
+  const renderSidebar = () => {
+    const body = el('cal-rp-body');
+    const dateLbl = el('cal-rp-date');
+    if (!body || !dateLbl) return;
+
+    const dateIso = CalendarService.selectedDateIso || Utils.todayIso();
+    const [yy, mm, dd] = dateIso.split('-').map(Number);
+    const dow = new Date(yy, mm - 1, dd).getDay();
+    dateLbl.textContent = `${daysLong[dow]}, ${dd} de ${monthNames[mm - 1]} de ${yy}`;
+
+    const evs = eventsByDate(dateIso);
+    body.innerHTML = '';
+    if (!evs.length) {
+      body.innerHTML = '<div class="cal-empty-state">Nenhum evento neste dia</div>';
+      return;
+    }
+
+    const badgePriority = (p) => {
+      const n = normalize(p);
+      if (n === 'alta') return '<span class="cal-badge cal-b-high">Alta</span>';
+      if (n === 'media' || n === 'média') return '<span class="cal-badge cal-b-mid">Média</span>';
+      return '<span class="cal-badge cal-b-low">Baixa</span>';
+    };
+
+    const priorityClass = (p) => {
+      const n = normalize(p);
+      if (n === 'alta') return 'cal-ev-high';
+      if (n === 'media' || n === 'média') return 'cal-ev-mid';
+      return 'cal-ev-low';
+    };
+
+    const progressValue = (status) => {
+      const s = normalize(status);
+      if (s.includes('conclu') || s.includes('finaliz')) return 100;
+      if (s.includes('andamento')) return 50;
+      return 0;
+    };
+
+    evs.forEach(ev => {
+      const card = document.createElement('div');
+      card.className = `cal-ev-card ${priorityClass(ev.priority)}`;
+
+      const pct = progressValue(ev.status);
+      const badges = [
+        ev.status ? `<span class="cal-badge cal-b-active">${Utils.escapeHtml(ev.status)}</span>` : '',
+        badgePriority(ev.priority),
+      ].filter(Boolean).join('');
+
+      const menuLabel = ev.removable ? 'Remover anotação' : (ev.isOpTask ? 'Ações' : 'Ações');
+      card.innerHTML =
+        '<div class="cal-ec-top">' +
+          `<div class="cal-ec-title">${Utils.escapeHtml(ev.title)}</div>` +
+          `<button class="cal-ec-menu" type="button" data-id="${ev.id}" aria-label="${menuLabel}">&#8942;</button>` +
+        '</div>' +
+        `<div class="cal-ec-meta">${Utils.escapeHtml(ev.category)}</div>` +
+        (badges ? `<div class="cal-ec-badges">${badges}</div>` : '') +
+        (ev.coords ? `<div class="cal-ec-coords">${Utils.escapeHtml(ev.coords).replace(/\n/g, '<br>')}</div>` : '') +
+        `<div class="cal-ec-progress"><div class="cal-ec-progress-fill" style="width:${pct}%"></div></div>` +
+        // FIX: preserva campos/botões existentes (copiar ref + status picker) quando aplicável
+        `<div class="cal-ec-badges" style="margin-top:10px;gap:6px">
+          ${ev.copyRef ? Utils.taskCopyProtocolButtonHtml(ev.copyRef, 'task-copy-id-btn--sm') : ''}
+          ${ev.isOpTask ? Utils.opTaskStatusPickerButtonHtml(ev.id, 'op-status-picker-btn--sm') : ''}
+        </div>`;
+
+      const menuBtn = card.querySelector('.cal-ec-menu');
+      menuBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ev.removable) {
+          CalendarService.removeNote(Number(ev.id));
+          UI.renderAgenda();
+          renderAll();
+          ToastService.show('Anotação removida', 'info');
+          return;
+        }
+        // Para tarefa, mantemos apenas como "menu" neutro (sem mudar comportamento existente do sistema).
+        ToastService.show('Ações do item: use o status ou copie o protocolo', 'info');
+      });
+
+      body.appendChild(card);
+    });
+  };
+
+  const renderUpcoming = () => {
+    const cont = el('cal-upcoming');
+    if (!cont) return;
+    cont.innerHTML = '';
+    const todayIso = Utils.todayIso();
+    const todayTs = new Date(`${todayIso}T00:00:00`).getTime();
+
+    // Próximos eventos: varre os próximos 45 dias para manter custo baixo.
+    const upcoming = [];
+    for (let i = 1; i <= 45; i++) {
+      const iso = Utils.addDaysIso(i);
+      eventsByDate(iso).forEach(ev => upcoming.push(ev));
+      if (upcoming.length >= 8) break;
+    }
+
+    const list = upcoming
+      .filter(ev => new Date(`${ev.date}T00:00:00`).getTime() > todayTs)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 5);
+
+    if (!list.length) {
+      cont.innerHTML = '<div style="font-size:11px;color:#374151;padding:4px 0">Sem próximos eventos</div>';
+      return;
+    }
+
+    list.forEach(ev => {
+      const [yy, mm, dd] = ev.date.split('-').map(Number);
+      const item = document.createElement('div');
+      item.className = 'cal-upcoming-item';
+      item.innerHTML =
+        '<div class="cal-upcoming-dot"></div>' +
+        '<div class="cal-upcoming-text">' +
+          `<strong>${dd} ${monthNames[mm - 1].slice(0, 3)}</strong><br>` +
+          `${Utils.escapeHtml(Utils.truncateForCalendar(ev.title || '', 30))}` +
+        '</div>';
+      cont.appendChild(item);
+    });
+  };
+
+  const renderAll = () => {
+    renderTopbar();
+    renderMiniCal();
+    renderHeatmap();
+    renderStats();
+    renderTimeline();
+    renderGrid();
+    renderSidebar();
+    renderUpcoming();
+  };
+
+  const bindOnce = () => {
+    const app = el('cal-app');
+    if (!app || app.dataset.bound) return;
+    app.dataset.bound = '1';
+
+    el('cal-prev')?.addEventListener('click', () => {
+      const d = CalendarService.currentMonthDate;
+      CalendarService.currentMonthDate = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+      renderAll();
+    });
+    el('cal-next')?.addEventListener('click', () => {
+      const d = CalendarService.currentMonthDate;
+      CalendarService.currentMonthDate = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      renderAll();
+    });
+    el('cal-today-btn')?.addEventListener('click', () => {
+      const now = new Date();
+      CalendarService.currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      CalendarService.selectedDateIso = Utils.todayIso();
+      renderAll();
+    });
+    el('refreshCalendarBtn')?.addEventListener('click', () => {
+      // Mantém o mesmo comportamento do refresh global do app.
+      renderAll();
+    });
+    el('cal-search')?.addEventListener('input', (e) => {
+      state.search = String(e.target.value || '');
+      renderAll();
+    });
+    el('cal-add-btn')?.addEventListener('click', () => {
+      Controllers.calendar._openNoteModal(CalendarService.selectedDateIso || Utils.todayIso());
+    });
+  };
+
+  return {
+    enabled() {
+      return Boolean(el('cal-app') && el('cal-grid') && el('cal-rp-body'));
+    },
+    bindOnce,
+    renderAll,
+  };
+})();
+
+/* ─────────────────────────────────────────────────────────────
    REPORTS SERVICE — Consolidação e exportação
 ───────────────────────────────────────────────────────────── */
 const ReportsService = {
@@ -3257,6 +3713,11 @@ const UI = {
 
   /* ── Calendar ───────────────────────────────────────────── */
   renderCalendarPage() {
+    if (CalendarV2.enabled()) {
+      CalendarV2.bindOnce();
+      CalendarV2.renderAll();
+      return;
+    }
     const monthTitle = document.getElementById('calendarMonthTitle');
     const weekdays = document.getElementById('calendarWeekdays');
     const grid = document.getElementById('calendarGrid');
@@ -3471,12 +3932,9 @@ const UI = {
   },
 
   /* ── Page navigation ────────────────────────────────────── */
-  _protectedPages: new Set([
-    'correcao-atenuacao',
-    'troca-etiqueta',
-    'qualidade-potencia',
-  ]),
-  _protectedPassword: '91166734',
+  // Proteção por senha removida (telas sempre liberadas).
+  _protectedPages: new Set([]),
+  _protectedPassword: '',
   _protectedSessionKey(page) {
     return `planner.protected.${String(page || '').trim()}.unlocked.v1`;
   },
@@ -3495,15 +3953,7 @@ const UI = {
     }
   },
   _ensureProtectedAccess(page) {
-    if (!this._protectedPages.has(page)) return true;
-    if (this._isProtectedUnlocked(page)) return true;
-    const entered = window.prompt('Tela protegida. Digite a senha para acessar:') ?? '';
-    if (String(entered).trim() === this._protectedPassword) {
-      this._setProtectedUnlocked(page);
-      return true;
-    }
-    ToastService?.show?.('Senha incorreta.', 'error');
-    return false;
+    return true;
   },
   navigateTo(page) {
     const prevPage = Store.currentPage;
@@ -3610,8 +4060,6 @@ const UI = {
     ]);
     if (!saved || !allowed.has(saved)) return;
     if (!document.getElementById(`page-${saved}`)) return;
-    // Não restaura automaticamente página protegida sem senha
-    if (this._protectedPages.has(saved) && !this._isProtectedUnlocked(saved)) return;
     this.navigateTo(saved);
   },
 
@@ -4687,11 +5135,9 @@ const UI = {
       const prioPill = `<span class="atn2-pill" style="background:${meta.badgeBg};border-color:${meta.badgeBg};color:${meta.badgeText}">${this._atn2Escape(meta.label)}</span>`;
       const initials = String(it.techInitials || '').trim() || Utils.getInitials(String(it.tech || '—'));
       const avatar = `<span class="atn2-avatar" style="${this._atn2TechAvatarStyle(it.techColor)}">${this._atn2Escape(initials)}</span>`;
-      const openBtn = `<button type="button" class="atn2-btn atn2-open" data-atn2-open="${Number(it.id) || 0}">Abrir</button>`;
       return `
         <div class="atn2-cto" data-atn2-item="${Number(it.id) || 0}">
           <span class="atn2-cto-leftbar" style="background:${meta.border}"></span>
-          ${openBtn}
           <div class="atn2-cto-top">
             <div class="atn2-cto-name">${this._atn2Escape(it.name)}</div>
             <div class="atn2-cto-dbm" style="color:${meta.value}">${this._atn2Escape(dbm)}</div>
@@ -4765,12 +5211,6 @@ const UI = {
 
     root.addEventListener('click', (e) => {
       const t = e.target;
-      const open = t?.closest?.('[data-atn2-open]');
-      if (open) {
-        e.preventDefault();
-        this._atn2OpenModal();
-        return;
-      }
       const card = t?.closest?.('[data-atn2-item]');
       if (card) {
         e.preventDefault();
@@ -4935,7 +5375,36 @@ const UI = {
       { key: 'unk', label: 'N/D', range: 'Sem leitura', count: laneCounts.unknown, max, color: 'gray' },
     ];
     this._atn2RenderLanes(document.getElementById('atn2Lanes'), lanes);
-    this._atn2RenderActivities(document.getElementById('atn2Activities'), []);
+
+    // Atividade recente: somente tarefas que entraram em "Em andamento" (histórico).
+    const todayIso = Utils.todayIso();
+    const atnOpTasks = [
+      ...(Store.getOpTasksByCategory('correcao-atenuacao') || []),
+      ...(Store.getOpTasksByCategory('correcao_atenuacao') || []),
+    ];
+    const acts = [];
+    atnOpTasks.forEach((t) => {
+      const hist = Array.isArray(t?.historico) ? t.historico : [];
+      const lastStart = [...hist].reverse().find(h => String(h?.status || '').trim() === 'Em andamento');
+      const ts = String(lastStart?.timestamp || '').trim();
+      if (!ts) return;
+      if (ts.slice(0, 10) !== todayIso) return;
+      const d = new Date(ts);
+      const time = Number.isFinite(d.getTime())
+        ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        : ts.slice(11, 16);
+      const tech = String(lastStart?.autor || t?.responsavel || '—').trim() || '—';
+      const title = String(t?.titulo || t?.nome || '').trim() || 'Tarefa';
+      acts.push({
+        color: 'blue',
+        text: `${title} em andamento`,
+        time,
+        tech,
+        ts,
+      });
+    });
+    acts.sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
+    this._atn2RenderActivities(document.getElementById('atn2Activities'), acts.slice(0, 10));
 
     // Timer de "tempo real" (sem duplicar intervalos)
     if (!this._atn2LiveTimer) {
@@ -5753,7 +6222,6 @@ const Controllers = {
       localStorage.setItem(this._sessionUserKey, userKey);
       this._unlock();
       this._syncSidebarUser();
-      Controllers.profileAvatar?.render();
       queueMicrotask(() => {
         ChatMentionNotifs.syncBellUi();
         UI.restoreLastPageIfAuthed?.();
@@ -5765,9 +6233,6 @@ const Controllers = {
     _syncSidebarUser() {
       const nameEl = document.getElementById('sidebarUserName');
       const roleEl = document.getElementById('sidebarUserRole');
-      const img = document.getElementById('sidebarUserAvatar');
-      const initialsEl = document.getElementById('sidebarUserInitials');
-      const wrap = document.getElementById('sidebarAvatarWrap');
       if (!nameEl || !roleEl) return;
 
       const logged = this._isAuthenticated();
@@ -5776,29 +6241,6 @@ const Controllers = {
 
       nameEl.textContent = display;
       roleEl.textContent = logged ? 'Administrador' : '—';
-
-      if (!img || !initialsEl || !wrap) return;
-
-      const url = resolveSidebarAvatarUrl();
-      const showPhoto = Boolean(url && logged);
-
-      wrap.classList.toggle('has-photo', showPhoto);
-
-      if (showPhoto) {
-        img.alt = display;
-        img.onerror = () => {
-          img.removeAttribute('src');
-          wrap.classList.remove('has-photo');
-          initialsEl.textContent = Utils.getInitials(display);
-          img.onerror = null;
-        };
-        if (img.getAttribute('src') !== url) img.setAttribute('src', url);
-      } else {
-        img.removeAttribute('src');
-        img.alt = '';
-        img.onerror = null;
-        initialsEl.textContent = logged ? Utils.getInitials(display) : '—';
-      }
     },
     async _login(user, pass) {
       if (!user || !pass) {
@@ -5857,12 +6299,15 @@ const Controllers = {
       const passInput = document.getElementById('loginPass');
       if (passInput) passInput.value = '';
       this._syncSidebarUser();
-      Controllers.profileAvatar?.render();
       ToastService.show('Sessão encerrada', 'info');
     },
     init() {
-      if (this._isAuthenticated()) this._unlock();
-      else this._lock();
+      // Autenticação removida: sempre libera o app (sem senha).
+      if (!this._isAuthenticated()) {
+        this._finishLogin('Usuário', 'usuario');
+      } else {
+        this._unlock();
+      }
       this._syncSidebarUser();
 
       const form = document.getElementById('loginForm');
@@ -5913,6 +6358,43 @@ const Controllers = {
       }
 
       document.getElementById('logoutBtn')?.addEventListener('click', () => this.logout());
+
+      // Menu do usuário (sidebar footer): clicar abre opção de sair.
+      const pill = document.getElementById('userPill');
+      const menu = document.getElementById('userMenu');
+      const setOpen = (open) => {
+        if (!pill || !menu) return;
+        menu.hidden = !open;
+        pill.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      const toggle = () => {
+        if (!pill || !menu) return;
+        setOpen(Boolean(menu.hidden));
+      };
+      pill?.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggle();
+      });
+      pill?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggle();
+        } else if (e.key === 'Escape') {
+          setOpen(false);
+        }
+      });
+      document.addEventListener('click', (e) => {
+        if (!pill || !menu) return;
+        const t = e.target;
+        if (menu.hidden) return;
+        if (t && (pill.contains(t) || menu.contains(t))) return;
+        setOpen(false);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        setOpen(false);
+      });
+      document.getElementById('logoutBtn')?.addEventListener('click', () => setOpen(false));
     },
   },
 
@@ -7831,6 +8313,17 @@ const Controllers = {
     },
 
     init() {
+      // Novo calendário: binds ficam dentro do CalendarV2.
+      if (document.getElementById('cal-app')) {
+        CalendarV2.bindOnce();
+        UI.renderCalendarPage();
+        document.getElementById('saveCalendarNoteBtn').addEventListener('click', () => this._saveNote());
+        ['closeCalendarNoteModal', 'cancelCalendarNoteModal'].forEach(id => {
+          document.getElementById(id)?.addEventListener('click', () => ModalService.close('calendarNoteModal'));
+        });
+        return;
+      }
+
       const grid = document.getElementById('calendarGrid');
       const dayList = document.getElementById('calendarDayList');
       if (!grid || !dayList) return;
@@ -7878,123 +8371,6 @@ const Controllers = {
       ['closeCalendarNoteModal', 'cancelCalendarNoteModal'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', () => ModalService.close('calendarNoteModal'));
       });
-    },
-  },
-
-  /* ── Avatar de Perfil ─────────────────────────────────── */
-  profileAvatar: {
-    _buildAvatarDataUrl(topColor, bottomColor, label) {
-      const safeLabel = String(label || 'BP').trim().slice(0, 2).toUpperCase() || 'BP';
-      const svg =
-        `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">` +
-        `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
-        `<stop offset="0%" stop-color="${topColor}"/><stop offset="100%" stop-color="${bottomColor}"/></linearGradient></defs>` +
-        `<rect width="120" height="120" rx="60" fill="url(#g)"/>` +
-        `<text x="60" y="67" text-anchor="middle" font-size="42" font-family="Arial, sans-serif" font-weight="700" fill="#ffffff">${safeLabel}</text>` +
-        `</svg>`;
-      return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-    },
-    _options() {
-      const base = [
-        { id: 'verde', label: 'Verde', url: this._buildAvatarDataUrl('#22c55e', '#16a34a', 'BP') },
-        { id: 'azul', label: 'Azul', url: this._buildAvatarDataUrl('#3b82f6', '#1d4ed8', 'BP') },
-        { id: 'roxo', label: 'Roxo', url: this._buildAvatarDataUrl('#8b5cf6', '#6d28d9', 'BP') },
-        { id: 'laranja', label: 'Laranja', url: this._buildAvatarDataUrl('#f97316', '#c2410c', 'BP') },
-        { id: 'cinza', label: 'Grafite', url: this._buildAvatarDataUrl('#64748b', '#334155', 'BP') },
-      ];
-      const extraRaw = window.APP_CONFIG && Array.isArray(window.APP_CONFIG.avatarOptions)
-        ? window.APP_CONFIG.avatarOptions
-        : [];
-      const extra = extraRaw
-        .filter(i => i && typeof i.url === 'string' && i.url.trim())
-        .map((i, idx) => ({
-          id: `ext-${idx + 1}`,
-          label: String(i.label || `Avatar ${idx + 1}`).trim(),
-          url: String(i.url).trim(),
-        }));
-      return [...AVATAR_ASSET_OPTIONS, ...base, ...extra];
-    },
-    _saveForCurrentUser(url) {
-      const finalUrl = String(url || '').trim();
-      const logged = Controllers.auth._isAuthenticated();
-      const userKey = logged ? getSessionUserKey() : '';
-      if (logged && userKey) {
-        const byUser = readUserAvatarMap();
-        byUser[userKey] = finalUrl;
-        try {
-          localStorage.setItem(USER_AVATAR_MAP_KEY, JSON.stringify(byUser));
-        } catch {}
-      } else {
-        try {
-          localStorage.setItem(GUEST_AVATAR_KEY, finalUrl);
-        } catch {}
-      }
-      Controllers.auth._syncSidebarUser();
-    },
-    _removeForCurrentUser() {
-      const logged = Controllers.auth._isAuthenticated();
-      const userKey = logged ? getSessionUserKey() : '';
-      if (logged && userKey) {
-        const byUser = readUserAvatarMap();
-        delete byUser[userKey];
-        try {
-          localStorage.setItem(USER_AVATAR_MAP_KEY, JSON.stringify(byUser));
-        } catch {}
-      } else {
-        try {
-          localStorage.removeItem(GUEST_AVATAR_KEY);
-        } catch {}
-      }
-      Controllers.auth._syncSidebarUser();
-    },
-    render() {
-      const root = document.getElementById('avatarPickerGrid');
-      const currentWrap = document.getElementById('avatarPickerCurrent');
-      const removeBtn = document.getElementById('removeAvatarBtn');
-      if (!root || !currentWrap) return;
-      const options = this._options();
-      const current = resolveSidebarAvatarUrl();
-      const logged = Controllers.auth._isAuthenticated();
-      const userKey = getSessionUserKey();
-      const byUser = readUserAvatarMap();
-      const hasUserCustom = Boolean(logged && userKey && String(byUser[userKey] || '').trim());
-      const hasGuestCustom = Boolean(!logged && readGuestAvatar());
-      const hasCustom = hasUserCustom || hasGuestCustom;
-
-      currentWrap.innerHTML = current
-        ? `<img src="${current}" alt="Avatar atual" class="avatar-picker-current-img" />`
-        : `<span class="avatar-picker-current-empty">Sem avatar</span>`;
-      if (removeBtn) removeBtn.disabled = !hasCustom;
-
-      root.innerHTML = options.map(opt => `
-        <button type="button" class="avatar-option ${current === opt.url ? 'is-selected' : ''}" data-avatar-option="${opt.id}">
-          <img src="${opt.url}" alt="${opt.label}" class="avatar-option-img" loading="lazy" decoding="async"/>
-          <span class="avatar-option-label">${opt.label}</span>
-        </button>
-      `).join('');
-    },
-    init() {
-      const root = document.getElementById('avatarPickerGrid');
-      if (!root) return;
-
-      root.addEventListener('click', e => {
-        const btn = e.target.closest('[data-avatar-option]');
-        if (!btn) return;
-        const id = String(btn.dataset.avatarOption || '');
-        const opt = this._options().find(i => i.id === id);
-        if (!opt) return;
-        this._saveForCurrentUser(opt.url);
-        this.render();
-        ToastService.show('Avatar atualizado com sucesso.', 'success');
-      });
-
-      document.getElementById('removeAvatarBtn')?.addEventListener('click', () => {
-        this._removeForCurrentUser();
-        this.render();
-        ToastService.show('Avatar removido. Voltou para o padrão.', 'info');
-      });
-
-      this.render();
     },
   },
 
@@ -8783,7 +9159,6 @@ async function initApp() {
   Controllers.opFolders.init();
   Controllers.reports.init();
   Controllers.calendar.init();
-  Controllers.profileAvatar.init();
   Controllers.webhook.init();
   Controllers.notes.init();
   Controllers.teamChat.init();

@@ -25,7 +25,7 @@
     })();
   </script>
 </head>
-<body class="auth-locked">
+<body>
 
 <section class="login-screen" id="loginScreen" aria-label="Tela de login">
   <canvas id="grid-canvas" width="300" height="150" aria-hidden="true"></canvas>
@@ -334,21 +334,27 @@
     </nav>
 
     <div class="sidebar-footer">
-      <button type="button" class="nav-item" id="logoutBtn" style="color:var(--danger)" aria-label="Sair">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-          <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-        </svg>
-        <span class="nav-label">Sair</span>
-      </button>
-      <div class="user-pill" role="status" aria-label="Usuário atual">
-        <div class="avatar-main" id="sidebarAvatarWrap" aria-hidden="true">
-          <img class="sidebar-user-avatar" id="sidebarUserAvatar" alt="" width="30" height="30" loading="lazy" decoding="async" />
-          <span class="sidebar-user-initials" id="sidebarUserInitials">—</span>
+      <div class="user-pill-wrap" id="userPillWrap">
+        <div class="user-pill" id="userPill" role="button" tabindex="0" aria-label="Usuário atual" aria-haspopup="true" aria-expanded="false">
+          <div class="user-info">
+            <div class="user-name" id="sidebarUserName">—</div>
+            <div class="user-role" id="sidebarUserRole">—</div>
+          </div>
+          <span class="user-pill-chevron" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </span>
         </div>
-        <div class="user-info">
-          <div class="user-name" id="sidebarUserName">—</div>
-          <div class="user-role" id="sidebarUserRole">—</div>
+        <div class="user-menu" id="userMenu" hidden>
+          <button type="button" class="user-menu-item" id="logoutBtn">
+            <svg class="user-menu-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            Sair do sistema
+          </button>
         </div>
       </div>
     </div>
@@ -466,6 +472,11 @@
               <div class="planner-kpi-head">
                 <span class="planner-kpi-label">Rompimentos</span>
                 <span class="planner-kpi-tag planner-kpi-tag--danger" id="plannerKpiTagRompimentos">urgente</span>
+                <button type="button" class="planner-kpi-toggle" id="plannerKpiToggleLate" aria-label="Alternar para atrasadas" title="Alternar para atrasadas">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </button>
               </div>
               <div class="planner-kpi-value" id="plannerKpiRompimentos">0</div>
               <p class="planner-kpi-sub" id="plannerKpiSubRompimentos">Incidentes abertos</p>
@@ -485,11 +496,9 @@
             <div class="planner-card" role="region" aria-label="Por região">
               <h2 class="planner-card-title">Por região</h2>
               <div id="plannerRegRows">
-                <div class="planner-reg-row"><div class="planner-reg-label"><span id="plannerRegLabel0">Centro</span><span id="plannerRegNum0">0</span></div><div class="planner-reg-bar"><span data-planner-reg-bar="0"></span></div></div>
-                <div class="planner-reg-row"><div class="planner-reg-label"><span id="plannerRegLabel1">Norte</span><span id="plannerRegNum1">0</span></div><div class="planner-reg-bar"><span data-planner-reg-bar="1"></span></div></div>
-                <div class="planner-reg-row"><div class="planner-reg-label"><span id="plannerRegLabel2">Sul</span><span id="plannerRegNum2">0</span></div><div class="planner-reg-bar"><span data-planner-reg-bar="2"></span></div></div>
-                <div class="planner-reg-row"><div class="planner-reg-label"><span id="plannerRegLabel3">Leste</span><span id="plannerRegNum3">0</span></div><div class="planner-reg-bar"><span data-planner-reg-bar="3"></span></div></div>
-                <div class="planner-reg-row"><div class="planner-reg-label"><span id="plannerRegLabel4">Oeste</span><span id="plannerRegNum4">0</span></div><div class="planner-reg-bar"><span data-planner-reg-bar="4"></span></div></div>
+                <div class="planner-reg-row"><div class="planner-reg-label"><span id="plannerRegLabel0">Goval</span><span id="plannerRegNum0">0</span></div><div class="planner-reg-bar"><span data-planner-reg-bar="0"></span></div></div>
+                <div class="planner-reg-row"><div class="planner-reg-label"><span id="plannerRegLabel1">Vale do Aço</span><span id="plannerRegNum1">0</span></div><div class="planner-reg-bar"><span data-planner-reg-bar="1"></span></div></div>
+                <div class="planner-reg-row"><div class="planner-reg-label"><span id="plannerRegLabel2">Caratinga</span><span id="plannerRegNum2">0</span></div><div class="planner-reg-bar"><span data-planner-reg-bar="2"></span></div></div>
               </div>
               <div class="planner-mini-grid">
                 <div class="planner-mini"><div class="planner-mini-lbl">Técnicos online</div><div class="planner-mini-val" id="plannerMiniTech">0</div></div>
@@ -784,6 +793,9 @@
 
       <!-- ═══ PAGE: CALENDÁRIO ═══ -->
       <section class="page" id="page-calendario" aria-label="Calendário">
+        <!--
+        Backup (temporário) do calendário antigo — remover após sua confirmação:
+        ```
         <div class="calendar-layout">
           <div class="panel calendar-panel" role="region" aria-label="Calendário mensal">
             <div class="panel-header">
@@ -819,6 +831,101 @@
               <button class="sm-btn" id="calendarAddNoteBtn">Adicionar</button>
             </div>
             <div class="calendar-day-list" id="calendarDayList"></div>
+          </div>
+        </div>
+        ```
+        -->
+
+        <div id="cal-app">
+          <div class="cal-topbar">
+            <div class="cal-topbar-left">
+              <span class="cal-page-title">Calendário</span>
+              <div class="cal-month-nav">
+                <button class="cal-mnav-btn" id="cal-prev" aria-label="Mês anterior">&#8249;</button>
+                <span class="cal-month-label" id="cal-month-label">—</span>
+                <button class="cal-mnav-btn" id="cal-next" aria-label="Próximo mês">&#8250;</button>
+              </div>
+              <div class="cal-view-toggle" aria-hidden="true">
+                <button class="cal-vt-btn cal-vt-active" data-view="month" type="button">Mês</button>
+                <button class="cal-vt-btn" data-view="week" type="button">Semana</button>
+                <button class="cal-vt-btn" data-view="day" type="button">Dia</button>
+              </div>
+            </div>
+            <div class="cal-topbar-right">
+              <input class="cal-search" id="cal-search" type="text" placeholder="Buscar evento..." autocomplete="off" />
+              <div class="cal-filters" id="cal-filters"></div>
+              <button class="cal-today-btn" id="cal-today-btn" type="button">Hoje</button>
+              <!-- Mantém compatibilidade com gatilhos existentes do app -->
+              <button class="cal-today-btn" id="refreshCalendarBtn" type="button" title="Atualizar calendário" aria-label="Atualizar calendário">Atualizar</button>
+            </div>
+          </div>
+
+          <div class="cal-main">
+            <aside class="cal-left-panel">
+              <div class="cal-mini-section">
+                <div class="cal-section-label">Navegação</div>
+                <div class="cal-mini-grid" id="cal-mini-grid"></div>
+              </div>
+
+              <div class="cal-stats-section">
+                <div class="cal-section-label">Hoje</div>
+                <div class="cal-stats-grid">
+                  <div class="cal-stat-chip cal-stat-blue">
+                    <div class="cal-stat-num" id="stat-today">0</div>
+                    <div class="cal-stat-lbl">eventos hoje</div>
+                  </div>
+                  <div class="cal-stat-chip cal-stat-red">
+                    <div class="cal-stat-num" id="stat-high">0</div>
+                    <div class="cal-stat-lbl">prioridade alta</div>
+                  </div>
+                  <div class="cal-stat-chip cal-stat-green">
+                    <div class="cal-stat-num" id="stat-month">0</div>
+                    <div class="cal-stat-lbl">este mês</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cal-heatmap-section">
+                <div class="cal-section-label">Intensidade do mês</div>
+                <div class="cal-heatmap-grid" id="cal-heatmap"></div>
+                <div class="cal-heatmap-legend">
+                  <span>Menos</span>
+                  <div class="cal-hm-sq cal-hm-0"></div>
+                  <div class="cal-hm-sq cal-hm-1"></div>
+                  <div class="cal-hm-sq cal-hm-2"></div>
+                  <div class="cal-hm-sq cal-hm-3"></div>
+                  <div class="cal-hm-sq cal-hm-4"></div>
+                  <span>Mais</span>
+                </div>
+              </div>
+
+              <div class="cal-timeline-section">
+                <div class="cal-section-label">Hoje — linha do tempo</div>
+                <div class="cal-timeline" id="cal-timeline-left"></div>
+              </div>
+            </aside>
+
+            <div class="cal-grid-area">
+              <div class="cal-day-headers" id="cal-day-headers"></div>
+              <div class="cal-grid" id="cal-grid" role="grid" aria-label="Dias do mês"></div>
+            </div>
+
+            <aside class="cal-right-panel">
+              <div class="cal-rp-header">
+                <div>
+                  <div class="cal-rp-title">Dia selecionado</div>
+                  <div class="cal-rp-date" id="cal-rp-date">—</div>
+                </div>
+                <button class="cal-add-btn" id="cal-add-btn" type="button">+ Novo</button>
+              </div>
+              <div class="cal-rp-body" id="cal-rp-body">
+                <div class="cal-empty-state">Selecione um dia para ver os eventos</div>
+              </div>
+              <div class="cal-upcoming-section">
+                <div class="cal-section-label" style="padding: 0 14px 8px;">Próximos eventos</div>
+                <div class="cal-upcoming-list" id="cal-upcoming"></div>
+              </div>
+            </aside>
           </div>
         </div>
       </section>
@@ -861,19 +968,6 @@
 
             <!-- Seção de modo claro removida: tema único (escuro minimalista) -->
 
-            <div class="config-avatar-card">
-              <div class="config-avatar-head">
-                <div>
-                  <div class="config-avatar-title">Perfil</div>
-                  <div class="config-avatar-subtitle">Escolha um avatar e salve no seu usuário.</div>
-                </div>
-                <div class="avatar-picker-current" id="avatarPickerCurrent"></div>
-              </div>
-              <div class="avatar-picker-grid" id="avatarPickerGrid"></div>
-              <div class="config-avatar-actions">
-                <button type="button" class="ghost-btn" id="removeAvatarBtn">Remover avatar</button>
-              </div>
-            </div>
           </div>
         </div>
       </section>

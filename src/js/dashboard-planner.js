@@ -14,11 +14,9 @@
       { tipo: 'success', texto: 'POP Central — etiquetagem concluída por Ana P.', hora: '00:12' },
     ],
     regioes: [
-      { nome: 'Centro', tarefas: 18 },
-      { nome: 'Norte', tarefas: 12 },
-      { nome: 'Sul', tarefas: 8 },
-      { nome: 'Leste', tarefas: 5 },
-      { nome: 'Oeste', tarefas: 3 },
+      { nome: 'Goval', tarefas: 18 },
+      { nome: 'Vale do Aço', tarefas: 12 },
+      { nome: 'Caratinga', tarefas: 8 },
     ],
     equipe: [
       { iniciais: 'JO', nome: 'João S.', tarefas: 3, status: 'danger' },
@@ -89,8 +87,16 @@
     _clockTimer: null,
     _feedTimer: null,
     _kpiAnimated: false,
+    _kpiLateMode: false,
+    _kpiLateModeKey: 'planner.dashboard.kpiLateMode.v1',
 
     init() {
+      try {
+        this._kpiLateMode = localStorage.getItem(this._kpiLateModeKey) === '1';
+      } catch {
+        this._kpiLateMode = false;
+      }
+
       const period = document.getElementById('plannerPeriodSelect');
       if (period) {
         period.value = this._storeFilterToPeriod(Store.dashboardFilter);
@@ -100,6 +106,19 @@
           if (typeof UI !== 'undefined' && UI.renderDashboard) UI.renderDashboard();
         });
       }
+
+      document.getElementById('plannerKpiToggleLate')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._kpiLateMode = !this._kpiLateMode;
+        try {
+          localStorage.setItem(this._kpiLateModeKey, this._kpiLateMode ? '1' : '0');
+        } catch {
+          /* ignore */
+        }
+        this._kpiAnimated = false;
+        this.syncFromStore();
+      });
 
       document.getElementById('plannerSettingsBtn')?.addEventListener('click', () => {
         if (typeof UI !== 'undefined' && UI.navigateTo) UI.navigateTo('config');
@@ -255,6 +274,7 @@
       const vAnd = Math.max(0, Math.round(counts.progress * scale));
       const vDone = Math.max(0, Math.round(counts.done * scale));
       const vRomp = Math.max(0, Math.round(romp * (scale > 0.5 ? 1 : scale)));
+      const vLate = Math.max(0, Math.round((Number(counts.late) || 0) * scale));
 
       const setKpi = (idVal, end, barFrac) => {
         const el = document.getElementById(idVal);
@@ -267,7 +287,7 @@
       setKpi('plannerKpiCriadas', vCriadas, Math.min(1, vCriadas / 40));
       setKpi('plannerKpiAndamento', vAnd, Math.min(1, vAnd / 20));
       setKpi('plannerKpiConcluidas', vDone, Math.min(1, vDone / 80));
-      setKpi('plannerKpiRompimentos', vRomp, Math.min(1, vRomp / 10));
+      setKpi('plannerKpiRompimentos', this._kpiLateMode ? vLate : vRomp, Math.min(1, (this._kpiLateMode ? vLate : vRomp) / 10));
 
       const tagC = document.getElementById('plannerKpiTagCriadas');
       if (tagC) tagC.textContent = `+${hoje} hoje`;
@@ -276,7 +296,7 @@
       const tagD = document.getElementById('plannerKpiTagConcluidas');
       if (tagD) tagD.textContent = `▲ ${Math.min(vDone, 12)}`;
       const tagR = document.getElementById('plannerKpiTagRompimentos');
-      if (tagR) tagR.textContent = vRomp ? 'urgente' : 'ok';
+      if (tagR) tagR.textContent = this._kpiLateMode ? (vLate ? 'atraso' : 'ok') : (vRomp ? 'urgente' : 'ok');
 
       const subC = document.getElementById('plannerKpiSubCriadas');
       if (subC) subC.textContent = `${all.length} tarefas no pipeline`;
@@ -285,7 +305,18 @@
       const subD = document.getElementById('plannerKpiSubConcluidas');
       if (subD) subD.textContent = vDone ? 'Encerradas no período selecionado' : 'Nenhuma ainda';
       const subR = document.getElementById('plannerKpiSubRompimentos');
-      if (subR) subR.textContent = vRomp ? 'Requer atenção imediata' : 'Sem incidentes abertos';
+      if (subR) subR.textContent = this._kpiLateMode
+        ? (vLate ? 'Tarefas com prazo vencido' : 'Sem tarefas atrasadas')
+        : (vRomp ? 'Requer atenção imediata' : 'Sem incidentes abertos');
+
+      const lblR = document.querySelector('#page-dashboard .planner-kpi--alert .planner-kpi-label');
+      if (lblR) lblR.textContent = this._kpiLateMode ? 'Atrasadas' : 'Rompimentos';
+
+      const tog = document.getElementById('plannerKpiToggleLate');
+      if (tog) {
+        tog.setAttribute('aria-label', this._kpiLateMode ? 'Alternar para rompimentos' : 'Alternar para atrasadas');
+        tog.setAttribute('title', this._kpiLateMode ? 'Alternar para rompimentos' : 'Alternar para atrasadas');
+      }
 
       const nbR = document.getElementById('navBadgeRomp');
       if (nbR) {
@@ -307,10 +338,11 @@
         const r = String(t.regiao || 'Outras').trim() || 'Outras';
         map[r] = (map[r] || 0) + 1;
       });
+      const LIMIT = 3;
       let rows = Object.keys(map).length
         ? Object.entries(map)
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 5)
+          .slice(0, LIMIT)
           .map(([nome, tarefas]) => ({ nome, tarefas }))
         : DADOS.regioes;
       const max = Math.max(1, ...rows.map(r => r.tarefas));
@@ -322,7 +354,7 @@
         if (nEl) nEl.textContent = String(row.tarefas);
         if (bar) bar.style.width = `${pct(row.tarefas, max)}%`;
       });
-      for (let i = rows.length; i < 5; i++) {
+      for (let i = rows.length; i < LIMIT; i++) {
         const lbl = document.getElementById(`plannerRegLabel${i}`);
         const nEl = document.getElementById(`plannerRegNum${i}`);
         const bar = document.querySelector(`[data-planner-reg-bar="${i}"]`);
@@ -336,21 +368,22 @@
       const tasks = TaskService.getFilteredTasks();
       const by = {};
       tasks.forEach(t => {
-        const n = String(t.responsavel || '').trim() || '—';
+        const n = String(t.responsavel || t.tecnico || '').trim();
+        if (!n) return;
         by[n] = (by[n] || 0) + 1;
       });
       const sorted = Object.entries(by)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 4);
-      const fallback = DADOS.equipe;
-      const list = sorted.length ? sorted.map(([nome, c], i) => ({
+      const list = sorted.map(([nome, c]) => ({
         iniciais: nome.slice(0, 2).toUpperCase(),
         nome,
         tarefas: c,
         status: c >= 3 ? 'danger' : c >= 2 ? 'warning' : 'success',
-      })) : fallback;
+      }));
 
-      list.forEach((m, i) => {
+      for (let i = 0; i < 4; i++) {
+        const m = list[i] || { iniciais: '—', nome: '—', tarefas: 0, status: 'success' };
         const av = document.getElementById(`plannerTeamAv${i}`);
         const nm = document.getElementById(`plannerTeamName${i}`);
         const ct = document.getElementById(`plannerTeamCount${i}`);
@@ -365,7 +398,7 @@
         if (dot) {
           dot.className = `planner-team-dot planner-team-dot--${m.status === 'danger' ? 'danger' : m.status === 'warning' ? 'warning' : 'success'}`;
         }
-      });
+      }
     },
 
     _applySlaInfra(anim) {

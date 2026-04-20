@@ -11,6 +11,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
+    requireAuth();
+    requireSameOriginForMutation();
+
     $data = readJsonBody();
     $pdo = db();
 
@@ -30,6 +33,7 @@ try {
 
     jsonResponse(['ok' => true]);
 } catch (Throwable $e) {
-    jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
+    error_log('[config.php] save failed: ' . $e->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'server_error'], 500);
 }
 

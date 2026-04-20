@@ -7,12 +7,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
+    requireAuth();
+    requireSameOriginForMutation();
+
     $pdo = db();
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = readJsonBody();
         $id = (int) ($data['id'] ?? 0);
         if ($id <= 0) {
             jsonResponse(['ok' => false, 'error' => 'id invalido'], 422);
+        }
+        $dateIn = trim((string) ($data['date'] ?? ''));
+        if ($dateIn === '' || $dateIn === '0000-00-00') {
+            jsonResponse(['ok' => false, 'error' => 'data invalida'], 422);
         }
         $sql = 'INSERT INTO calendar_notes (id, `date`, title, description, priority, createdAt)
                 VALUES (:id, :note_date, :title, :description, :priority, :createdAt)
@@ -25,7 +32,7 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             ':id' => $id,
-            ':note_date' => (string) ($data['date'] ?? ''),
+            ':note_date' => $dateIn,
             ':title' => (string) ($data['title'] ?? ''),
             ':description' => (string) ($data['description'] ?? ''),
             ':priority' => (string) ($data['priority'] ?? 'Média'),
@@ -47,6 +54,7 @@ try {
 
     jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
 } catch (Throwable $e) {
-    jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
+    error_log('[calendar_notes.php] failed: ' . $e->getMessage());
+    jsonResponse(['ok' => false, 'error' => 'server_error'], 500);
 }
 

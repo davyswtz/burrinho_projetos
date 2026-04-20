@@ -72,10 +72,48 @@ function jsonResponse(array $payload, int $status = 200): void
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
     header('Pragma: no-cache');
     header('Expires: 0');
-    header('Access-Control-Allow-Origin: *');
+    // FIX: CORS conservador (sessão). Permitimos apenas a mesma origem do host atual.
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    $sameOrigin = ($host !== '') ? ($scheme . '://' . $host) : '';
+    if ($sameOrigin !== '') {
+        header('Access-Control-Allow-Origin: ' . $sameOrigin);
+        header('Vary: Origin');
+    }
     header('Access-Control-Allow-Methods: GET,POST,DELETE,OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type');
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+function requireAuth(): void
+{
+    if (empty($_SESSION['planner_user'])) {
+        jsonResponse(['ok' => false, 'error' => 'unauthorized'], 401);
+    }
+}
+
+function requireSameOriginForMutation(): void
+{
+    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if (!in_array($method, ['POST', 'DELETE', 'PUT', 'PATCH'], true)) {
+        return;
+    }
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    if ($host === '') {
+        return;
+    }
+    $expected = $scheme . '://' . $host;
+    $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+    $referer = (string) ($_SERVER['HTTP_REFERER'] ?? '');
+    if ($origin !== '' && stripos($origin, $expected) === 0) {
+        return;
+    }
+    if ($origin === '' && $referer !== '' && stripos($referer, $expected) === 0) {
+        return;
+    }
+    // FIX: CSRF básica via Origin/Referer (sessão).
+    jsonResponse(['ok' => false, 'error' => 'forbidden'], 403);
 }
 
