@@ -2218,6 +2218,9 @@ const OpTaskService = {
     if (task.categoria === 'certificacao-cemig') {
       return this._cemigColumns.map(c => c.status);
     }
+    if (task.categoria === 'correcao-atenuacao') {
+      return ['Criada', 'Em andamento', 'Concluída'];
+    }
     return this._stdOpStatusPicklist();
   },
 
@@ -3262,6 +3265,7 @@ const UI = {
     const isAtendimento = false;
 
     const isCemig = category === 'certificacao-cemig';
+    board?.classList.toggle('kanban-board--otim-scroll', category === 'otimizacao-rede');
     if (isCemig) board?.classList.add('kanban-board--cemig');
     else board?.classList.remove('kanban-board--cemig');
 
@@ -5377,10 +5381,35 @@ const UI = {
     });
 
     const thresholds = this._ATN_THRESHOLDS_DEFAULT;
+    // Filtra placeholders / itens incompletos (não entram na lista normal).
+    const isGenericTestName = (raw) => {
+      const n = String(raw || '').trim().toLowerCase();
+      if (!n) return true;
+      if (n === 'teste' || n === 'test' || n.startsWith('teste ') || n.startsWith('test ')) return true;
+      return false;
+    };
+    const isPlaceholderNovaCaixa = (raw) => {
+      const n = String(raw || '').trim().toLowerCase();
+      return (n.includes('cto-00') || n.startsWith('cto-00')) && n.includes('nova caixa');
+    };
+    const hidden = [];
+    const visible = [];
+    filtered.forEach((t) => {
+      const titleRaw = String(t.setor || t.titulo || '').trim();
+      const db = this._atnDb(t);
+      const hasDb = Number.isFinite(db);
+      const pr = String(t.prioridade || '').trim();
+      const hasPr = !!pr;
+      const isBadName = isGenericTestName(titleRaw) || isPlaceholderNovaCaixa(titleRaw);
+      const incomplete = !hasDb || !hasPr;
+      if (isBadName || incomplete) hidden.push(t);
+      else visible.push(t);
+    });
+
     const createdStatuses = new Set(['Criada', 'Backlog', 'A iniciar', 'Pendente']);
     const createdTasks = [];
     const activeTasks = [];
-    filtered.forEach((t) => {
+    visible.forEach((t) => {
       const s = String(t.status || '').trim();
       if (createdStatuses.has(s)) createdTasks.push(t);
       else activeTasks.push(t);
@@ -5408,13 +5437,16 @@ const UI = {
     };
     // Contadores no topo foram removidos do layout; as contagens aparecem nos títulos das colunas.
 
-    const total = filtered.length;
-    const withDb = filtered.filter((t) => Number.isFinite(this._atnDb(t))).length;
+    const total = visible.length;
+    const withDb = visible.filter((t) => Number.isFinite(this._atnDb(t))).length;
     const criticalLoad = Math.min(100, Math.round(((buckets.p0.length + buckets.p1.length) / Math.max(total, 1)) * 100));
     const thermoFill = document.getElementById('atnThermoFill');
     if (thermoFill) thermoFill.style.width = `${criticalLoad}%`;
     const thermoLabel = document.getElementById('atnThermoLabel');
-    if (thermoLabel) thermoLabel.textContent = `${total} item(ns) · ${withDb} com dB identificado · ${criticalLoad}% crítico/alto`;
+    if (thermoLabel) {
+      const hiddenCount = hidden.length;
+      thermoLabel.textContent = `${total} item(ns) · ${withDb} com dB identificado · ${criticalLoad}% crítico/alto${hiddenCount ? ` · ${hiddenCount} oculto(s) (incompleto/teste)` : ''}`;
+    }
 
     const fmtDb = (x) => {
       if (!Number.isFinite(x)) return '—';
@@ -5438,15 +5470,27 @@ const UI = {
     const renderCard = (t) => {
       const dbVal = Number.isFinite(t._atnDb) ? `${fmtDb(t._atnDb)} dBm` : '— dBm';
       const regionBadge = this.regionBadge(t.regiao);
-      const prioBadge = this.priorityBadge(t.prioridade || '');
+      const sevKey = this._atnBucketForTask(t, thresholds);
+      const prioBadge = (() => {
+        const k = String(sevKey || '').toLowerCase();
+        if (k === 'p0') return `<span class="badge p-high" title="Prioridade P0">P0 Crítica</span>`;
+        if (k === 'p1') return `<span class="badge p-med" title="Prioridade P1">P1 Alta</span>`;
+        if (k === 'p2') return `<span class="badge p-low" title="Prioridade P2">P2 Média</span>`;
+        if (k === 'p3') return `<span class="badge p-low" title="Prioridade P3">P3 Leve</span>`;
+        return `<span class="badge reg-unknown" title="Item incompleto">Incompleto</span>`;
+      })();
       const status = this.statusBadge(t.status || 'Criada');
+      const statusPickerBtn = Utils.opTaskStatusPickerButtonHtml(t.id, 'op-status-picker-btn--sm');
       const who = String(t.responsavel || '—').trim();
-      const titleText = String(t.setor || t.titulo || 'Correção de atenuação').trim() || 'Correção de atenuação';
-      const sub = String(t.localizacaoTexto || '').trim();
+      const titleTextRaw = String(t.setor || t.titulo || 'CTO').trim() || 'CTO';
+      const titleParts = titleTextRaw.split('·').map(s => s.trim()).filter(Boolean);
+      const ctoName = titleParts[0] || titleTextRaw;
+      const locFromTitle = titleParts.slice(1).join(' · ');
+      const locText = String(t.localizacaoTexto || '').trim() || locFromTitle || String(t.regiao || '').trim();
+      const sub = locText;
       const copyBtn = Utils.taskCopyProtocolButtonHtml(Utils.opTaskDisplayRef(t), 'task-copy-id-btn--sm');
       const override = this._atnOverrideBucket(t);
       const overrideBadge = override ? `<span class="badge reg-unknown" title="Movido manualmente por arrastar e soltar">Manual</span>` : '';
-      const sevKey = this._atnBucketForTask(t, thresholds);
       const sevClass = `atn-sev-${sevKey === 'unknown' ? 'unknown' : sevKey}`;
       return `
         <div class="kanban-card atn-draggable-card ${sevClass}" draggable="true" data-atn-drag-id="${Number(t.id) || 0}" style="position:relative">
@@ -5454,7 +5498,7 @@ const UI = {
             <div style="min-width:0">
               <div class="kanban-card-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
                 ${copyBtn}
-                <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(titleText)}</span>
+                <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(ctoName)}</span>
               </div>
               ${sub ? `<div class="kanban-card-sub" style="color:var(--white4);font-size:12px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(sub)}</div>` : ''}
             </div>
@@ -5467,7 +5511,7 @@ const UI = {
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px">
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              ${status}
+              <span class="dashboard-status-with-picker">${status}${statusPickerBtn}</span>
               ${regionBadge}
               ${prioBadge}
               ${overrideBadge}

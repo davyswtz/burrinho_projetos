@@ -1707,6 +1707,23 @@ tbody td:first-child { color: var(--white); font-weight: 500; }
   width: 100%;
 }
 
+/* Otimização de Rede: muitas tarefas → rolagem por coluna (não quebra layout) */
+#page-tarefas .kanban-board.kanban-board--otim-scroll .kanban-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#page-tarefas .kanban-board.kanban-board--otim-scroll .kanban-cards {
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+#page-tarefas .kanban-board.kanban-board--otim-scroll .kanban-col-add {
+  flex-shrink: 0;
+}
+
 /* ═══ Correção de atenuação — (layout/responsivo) ═══ */
 #page-correcao-atenuacao .panel {
   padding: 18px;
