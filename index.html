@@ -16,7 +16,7 @@
     (function () {
       var v = window.APP_CONFIG && window.APP_CONFIG.appBuild ? String(window.APP_CONFIG.appBuild) : '';
       var qs = v ? ('?v=' + encodeURIComponent(v)) : '';
-      ['./src/css/design-system.css', './src/css/main.css', './src/css/login-teleplan.css', './src/css/dashboard-planner.css'].forEach(function (href) {
+      ['./src/css/design-system.css', './src/css/main.css', './src/css/login-teleplan.css', './src/css/dashboard-planner.css', './src/css/calendar.css'].forEach(function (href) {
         var l = document.createElement('link');
         l.rel = 'stylesheet';
         l.href = href + qs;
@@ -216,11 +216,6 @@
           <div class="planner-sidebar-meta">Planner Telecom</div>
         </div>
       </div>
-      <button class="collapse-btn" id="collapseBtn" title="Recolher menu" aria-label="Recolher menu">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path d="M15 18l-6-6 6-6"/>
-        </svg>
-      </button>
     </div>
 
     <nav class="nav" aria-label="Navegação">
@@ -523,8 +518,6 @@
             </div>
             <div class="planner-card" role="region" aria-label="Troca de poste">
               <h2 class="planner-card-title">Troca de poste</h2>
-              <div class="planner-infra-row"><span class="planner-infra-lbl">Nós ativos</span><span class="planner-infra-val planner-infra-val--pos"><span id="plannerInfraNosOn">0</span> / <span id="plannerInfraNosTotal">340</span></span></div>
-              <div class="planner-infra-bar-wrap"><div class="planner-infra-bar"><span data-planner-infra-nos-bar></span></div></div>
               <div class="planner-infra-row"><span class="planner-infra-lbl">Troca de poste (total)</span><span class="planner-infra-val planner-infra-val--neu" id="plannerTpTotal">0</span></div>
               <div class="planner-infra-row"><span class="planner-infra-lbl">Goval</span><span class="planner-infra-val planner-infra-val--neu" id="plannerTpGoval">0</span></div>
               <div class="planner-infra-row"><span class="planner-infra-lbl">Vale do Aço</span><span class="planner-infra-val planner-infra-val--neu" id="plannerTpVale">0</span></div>
@@ -800,9 +793,21 @@
         -->
 
         <div id="cal-app">
+          <div class="cal-maint-overlay" id="cal-maint-overlay" role="dialog" aria-modal="true" aria-label="Calendário em manutenção" hidden>
+            <div class="cal-maint-card">
+              <div class="cal-maint-title">Calendário em manutenção</div>
+              <div class="cal-maint-sub">Para acessar, informe a senha.</div>
+              <div class="cal-maint-form">
+                <input type="password" id="cal-maint-pass" class="cal-maint-input" placeholder="Senha" autocomplete="off" />
+                <button type="button" id="cal-maint-enter" class="cal-maint-btn">Acessar</button>
+              </div>
+              <div class="cal-maint-hint" id="cal-maint-hint" aria-live="polite"></div>
+            </div>
+          </div>
           <div class="cal-topbar">
             <div class="cal-topbar-left">
               <span class="cal-page-title">Calendário</span>
+              <span class="cal-now" id="cal-now">—</span>
               <div class="cal-month-nav">
                 <button class="cal-mnav-btn" id="cal-prev" aria-label="Mês anterior">&#8249;</button>
                 <span class="cal-month-label" id="cal-month-label">—</span>
@@ -815,7 +820,16 @@
               </div>
             </div>
             <div class="cal-topbar-right">
-              <input class="cal-search" id="cal-search" type="text" placeholder="Buscar evento..." autocomplete="off" />
+              <button class="cal-sys-btn" id="cal-sys-btn" type="button" title="Abrir configurações de webhooks">todos os sistemas ok</button>
+              <div class="cal-sys-dd" id="cal-sys-dd" hidden>
+                <button type="button" class="cal-sys-dd-item" data-cal-sys-pick="ok">OK</button>
+                <button type="button" class="cal-sys-dd-item" data-cal-sys-pick="warning">Warning</button>
+                <button type="button" class="cal-sys-dd-item" data-cal-sys-pick="off">OFF</button>
+              </div>
+              <div class="cal-search-wrap" role="search">
+                <input class="cal-search" id="cal-search" type="text" placeholder="Buscar evento..." autocomplete="off" />
+                <button type="button" class="cal-search-clear" id="cal-search-clear" aria-label="Limpar busca" title="Limpar" hidden>&times;</button>
+              </div>
               <div class="cal-filters" id="cal-filters"></div>
               <button class="cal-today-btn" id="cal-today-btn" type="button">Hoje</button>
               <!-- Mantém compatibilidade com gatilhos existentes do app -->
@@ -981,6 +995,56 @@
       <button class="primary-btn" id="saveCalendarNoteBtn">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
         Salvar anotação
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: EVENTO (CALENDÁRIO v3) ═══ -->
+<div class="modal-overlay" id="eventModal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="eventModalTitle">Novo evento</span>
+      <button class="close-btn" id="closeEventModal" aria-label="Fechar modal">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ev-id" value=""/>
+      <div class="form-group">
+        <label for="ev-titulo">Título</label>
+        <input type="text" id="ev-titulo" placeholder="Título do evento" autocomplete="off"/>
+      </div>
+      <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label for="ev-inicio">Data início</label>
+          <input type="datetime-local" id="ev-inicio"/>
+        </div>
+        <div class="form-group">
+          <label for="ev-fim">Data fim</label>
+          <input type="datetime-local" id="ev-fim"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="ev-cat">Categoria</label>
+        <select id="ev-cat">
+          <option value="Rompimentos">Rompimentos</option>
+          <option value="Alta">Alta</option>
+          <option value="Em andamento" selected>Em andamento</option>
+          <option value="Manutenção">Manutenção</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="ev-desc">Descrição</label>
+        <textarea id="ev-desc" placeholder="Detalhes do evento..." style="min-height:90px;resize:vertical"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="ghost-btn danger-btn" id="deleteEventBtn" style="display:none">Excluir</button>
+      <button class="ghost-btn" id="cancelEventModal">Cancelar</button>
+      <button class="primary-btn" id="saveEventBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        Salvar
       </button>
     </div>
   </div>
@@ -1380,6 +1444,11 @@
       s.onload = function () {
         var d = document.createElement('script');
         d.src = './src/js/dashboard-planner.js' + qs;
+        d.onload = function () {
+          var c = document.createElement('script');
+          c.src = './src/js/calendar.js' + qs;
+          document.body.appendChild(c);
+        };
         document.body.appendChild(d);
       };
       document.body.appendChild(s);

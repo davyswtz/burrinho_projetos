@@ -80,6 +80,21 @@ CREATE TABLE IF NOT EXISTS calendar_notes (
   KEY idx_cal_notes_date (`date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ─── Eventos do calendário (CRUD completo) ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS eventos (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  titulo VARCHAR(255) NOT NULL,
+  descricao TEXT,
+  data_inicio DATETIME NOT NULL,
+  data_fim DATETIME NULL,
+  categoria VARCHAR(32) NOT NULL DEFAULT 'Em andamento',
+  criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_eventos_inicio (data_inicio),
+  KEY idx_eventos_categoria (categoria)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── Configuração (webhook Google Chat, nota do planner) ───────────────────
 CREATE TABLE IF NOT EXISTS app_config (
   cfg_key VARCHAR(64) NOT NULL,

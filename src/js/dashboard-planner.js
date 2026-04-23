@@ -453,7 +453,71 @@
     },
 
     _applySlaInfra(anim) {
-      const sla = DADOS.sla;
+      const opTasks = (typeof Store !== 'undefined' && Store.getOpTasks) ? Store.getOpTasks() : [];
+      const rompimentos = opTasks.filter(t => String(t?.categoria || '').trim() === 'rompimentos');
+
+      const doneStatuses = new Set(['Concluída', 'Finalizada', 'Finalizado']);
+      const okYmd = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && !String(d || '').startsWith('0000');
+      const todayIso = Utils.todayIso();
+
+      const monthKey = (ymd) => String(ymd || '').slice(0, 7);
+      const addMonths = (ym, delta) => {
+        const y = Number(String(ym).slice(0, 4));
+        const m = Number(String(ym).slice(5, 7));
+        if (!Number.isFinite(y) || !Number.isFinite(m)) return ym;
+        const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+        const yy = d.getUTCFullYear();
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        return `${yy}-${mm}`;
+      };
+
+      const classify = (t) => {
+        const prazo = String(t?.prazo || '').slice(0, 10);
+        const st = String(t?.status || '').trim();
+        const isDone = doneStatuses.has(st);
+
+        // Data de conclusão (se houver) para medir "concluída fora do prazo".
+        let endDay = '';
+        if (isDone) {
+          const hist = Array.isArray(t?.historico) ? t.historico : [];
+          const end = [...hist].reverse().find(h => doneStatuses.has(String(h?.status || '').trim()) && h?.timestamp)?.timestamp;
+          endDay = end ? String(end).slice(0, 10) : '';
+        }
+
+        if (isDone) {
+          if (endDay && endDay > prazo) return 'violado';
+          return 'noPrazo';
+        }
+        if (todayIso > prazo) return 'violado';
+
+        // "Em risco": vencendo em até 2 dias (inclui hoje), ainda não finalizada.
+        const daysLeft = Math.floor((Date.parse(prazo) - Date.parse(todayIso)) / 86400000);
+        if (Number.isFinite(daysLeft) && daysLeft <= 2) return 'emRisco';
+        return 'noPrazo';
+      };
+
+      // SLA mensal (rompimentos do mês corrente) + delta vs mês anterior.
+      const curYm = monthKey(todayIso);
+      const prevYm = addMonths(curYm, -1);
+      const monthTasks = (ym) =>
+        rompimentos.filter(t => okYmd(String(t?.prazo || '').slice(0, 10)) && monthKey(String(t?.prazo || '').slice(0, 10)) === ym);
+
+      const summarizeMonth = (ym) => {
+        const base = monthTasks(ym);
+        const s = { total: base.length, noPrazo: 0, emRisco: 0, violado: 0 };
+        base.forEach((t) => {
+          const k = classify(t);
+          s[k] += 1;
+        });
+        const geral = s.total ? (100 * s.noPrazo) / s.total : 0;
+        return { ...s, geral };
+      };
+
+      const sla = summarizeMonth(curYm);
+      const slaPrev = summarizeMonth(prevYm);
+      const deltaVal = (slaPrev.total ? (sla.geral - slaPrev.geral) : 0);
+      const deltaTxt = slaPrev.total ? `${deltaVal >= 0 ? '+' : ''}${deltaVal.toFixed(1)}%` : '—';
+
       const elSla = document.getElementById('plannerSlaValor');
       if (elSla) {
         if (anim) animateNumber(elSla, sla.geral, KPI_DURATION, v => `${v.toFixed(1)}%`);
@@ -461,8 +525,8 @@
       }
       const del = document.getElementById('plannerSlaDelta');
       if (del) {
-        del.textContent = sla.delta;
-        del.className = `planner-sla-delta ${sla.delta.startsWith('-') ? 'planner-sla-delta--down' : 'planner-sla-delta--up'}`;
+        del.textContent = deltaTxt;
+        del.className = `planner-sla-delta ${deltaTxt.startsWith('-') ? 'planner-sla-delta--down' : 'planner-sla-delta--up'}`;
       }
       const tot = (sla.noPrazo + sla.emRisco + sla.violado) || 1;
       const w0 = document.querySelector('[data-planner-seg="ok"]');
@@ -471,14 +535,6 @@
       if (w0) w0.style.width = `${pct(sla.noPrazo, tot)}%`;
       if (w1) w1.style.width = `${pct(sla.emRisco, tot)}%`;
       if (w2) w2.style.width = `${pct(sla.violado, tot)}%`;
-
-      const inf = DADOS.infra;
-      const on = document.getElementById('plannerInfraNosOn');
-      if (on) on.textContent = String(inf.nosAtivos);
-      const totN = document.getElementById('plannerInfraNosTotal');
-      if (totN) totN.textContent = String(inf.nosTotal);
-      const bar = document.querySelector('[data-planner-infra-nos-bar]');
-      if (bar) bar.style.width = `${pct(inf.nosAtivos, inf.nosTotal)}%`;
 
       // Troca de poste por região (tarefa operacional)
       const tpAll = (typeof Store !== 'undefined' && Store.getOpTasks)
@@ -504,13 +560,8 @@
       const tpBackEl = document.getElementById('plannerTpBackup');
       if (tpBackEl) tpBackEl.textContent = String(countBy.Backup);
 
-      const opTasks = (typeof Store !== 'undefined' && Store.getOpTasks) ? Store.getOpTasks() : [];
-      const rompimentos = opTasks.filter(t => String(t?.categoria || '').trim() === 'rompimentos');
       const ms = document.getElementById('plannerMiniSla');
       // SLA geral (rompimentos): % de itens dentro do prazo (concluídos até o prazo, ou ainda no prazo).
-      const doneStatuses = new Set(['Concluída', 'Finalizada', 'Finalizado']);
-      const okYmd = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && !String(d || '').startsWith('0000');
-      const todayIso = Utils.todayIso();
       const slaBase = rompimentos.filter(t => okYmd(String(t?.prazo || '').slice(0, 10)));
       const slaTotal = slaBase.length;
       const slaOk = slaBase.filter(t => {

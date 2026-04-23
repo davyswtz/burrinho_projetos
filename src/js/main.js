@@ -2508,7 +2508,7 @@ const OpTaskService = {
 
   /** Status exibidos no menu «alterar status» (fora do fluxo Cemig). */
   _stdOpStatusPicklist() {
-    return ['Backlog', 'A iniciar', 'Criada', 'Pendente', 'Em andamento', 'Concluída', 'Finalizada', 'Finalizado', 'Cancelada'];
+    return ['Criada', 'Em andamento', 'Concluída', 'Finalizada'];
   },
 
   /**
@@ -2523,6 +2523,9 @@ const OpTaskService = {
     }
     if (task.categoria === 'correcao-atenuacao') {
       return ['Criada', 'Em andamento', 'Concluída'];
+    }
+    if (task.categoria === 'atendimento-cliente') {
+      return ['Backlog', 'Em andamento', 'Concluída', 'Finalizada'];
     }
     return this._stdOpStatusPicklist();
   },
@@ -3914,6 +3917,11 @@ const UI = {
 
   /* ── Calendar ───────────────────────────────────────────── */
   renderCalendarPage() {
+    // Calendário v3 (calendar.js)
+    if (document.getElementById('cal-app')) {
+      queueMicrotask(() => window.CalendarApp?.init?.());
+      return;
+    }
     if (CalendarV2.enabled()) {
       CalendarV2.bindOnce();
       CalendarV2.renderAll();
@@ -7338,20 +7346,22 @@ const Controllers = {
       const sidebar = document.getElementById('sidebar');
       const collapseBtn = document.getElementById('collapseBtn');
 
-      collapseBtn.addEventListener('click', () => {
-        if (this.isMobileNav()) {
-          this.closeMobileNav();
-          return;
-        }
-        sidebar.classList.toggle('collapsed');
-        Store.sidebarOpen = !sidebar.classList.contains('collapsed');
-      });
+      if (collapseBtn && sidebar) {
+        collapseBtn.addEventListener('click', () => {
+          if (this.isMobileNav()) {
+            this.closeMobileNav();
+            return;
+          }
+          sidebar.classList.toggle('collapsed');
+          Store.sidebarOpen = !sidebar.classList.contains('collapsed');
+        });
+      }
 
       document.getElementById('mobileNavBtn')?.addEventListener('click', () => this.toggleMobileNav());
       document.getElementById('sidebarBackdrop')?.addEventListener('click', () => this.closeMobileNav());
 
       const onViewportNavMode = e => {
-        if (!e.matches) {
+        if (!e.matches && sidebar) {
           this.closeMobileNav();
           if (!Store.sidebarOpen) sidebar.classList.add('collapsed');
           else sidebar.classList.remove('collapsed');
@@ -9292,24 +9302,10 @@ const Controllers = {
     },
 
     init() {
-      // Novo calendário: binds ficam dentro do CalendarV2.
+      // Calendário v3 (calendar.js): binds/CRUD ficam no módulo.
       if (document.getElementById('cal-app')) {
-        CalendarV2.bindOnce();
-        UI.renderCalendarPage();
-        document.getElementById('saveCalendarNoteBtn').addEventListener('click', () => this._saveNote());
-        document.getElementById('deleteCalendarNoteBtn')?.addEventListener('click', () => {
-          const id = Number(document.getElementById('cal-note-id')?.value || 0) || Number(this._editingNoteId || 0);
-          if (!id) return;
-          if (!window.confirm('Excluir esta anotação do calendário?')) return;
-          CalendarService.removeNote(id);
-          ModalService.close('calendarNoteModal');
-          UI.renderAgenda();
-          UI.renderCalendarPage();
-          ToastService.show('Anotação removida', 'info');
-        });
-        ['closeCalendarNoteModal', 'cancelCalendarNoteModal'].forEach(id => {
-          document.getElementById(id)?.addEventListener('click', () => ModalService.close('calendarNoteModal'));
-        });
+        // Inicializa quando o script estiver carregado (loader no index.html carrega após main.js).
+        queueMicrotask(() => window.CalendarApp?.init?.());
         return;
       }
 
@@ -9365,6 +9361,37 @@ const Controllers = {
 
   /* ── Webhook ──────────────────────────────────────────── */
   webhook: {
+    _lastAllSystemsOk: null,
+
+    _syncSystemPill() {
+      const pill = document.querySelector('.planner-status-pill');
+      if (!pill) return;
+      const textEl = pill.querySelector('span:last-child');
+      const cfg = Store.getWebhookConfig?.() || {};
+      const byRegion = (cfg && cfg.urlsByRegion && typeof cfg.urlsByRegion === 'object') ? cfg.urlsByRegion : {};
+
+      const required = ['GOVAL', 'VALE_DO_ACO', 'CARATINGA', 'BACKUP'];
+      const missing = required.filter(k => !String(byRegion[k] || '').trim());
+      const ok = missing.length === 0;
+
+      if (textEl) {
+        textEl.textContent = ok ? 'todos os sistemas ok' : 'existe sistema off';
+      }
+      pill.classList.toggle('planner-status-pill--danger', !ok);
+
+      // Notificação ao detectar que existe sistema OFF (sem spam)
+      if (this._lastAllSystemsOk === null) {
+        if (!ok && typeof ToastService !== 'undefined' && ToastService.show) {
+          ToastService.show('Existe sistema OFF. Verifique os 4 webhooks nas Configurações.', 'warning');
+        }
+      } else if (this._lastAllSystemsOk === true && !ok) {
+        if (typeof ToastService !== 'undefined' && ToastService.show) {
+          ToastService.show('Existe sistema OFF. Verifique os 4 webhooks nas Configurações.', 'warning');
+        }
+      }
+      this._lastAllSystemsOk = ok;
+    },
+
     _syncBanner() {
       const config  = Store.getWebhookConfig();
       const banner  = document.getElementById('webhookBanner');
@@ -9430,6 +9457,7 @@ const Controllers = {
           },
         });
         this._syncBanner();
+        this._syncSystemPill();
         ModalService.close('webhookModal');
         if (!Store.isRemoteApiEnabled()) {
           ToastService.show('Google Chat conectado (salvo só neste navegador).', 'success');
@@ -9446,6 +9474,7 @@ const Controllers = {
       document.getElementById('disconnectWebhook')?.addEventListener('click', async () => {
         const res = await Store.setWebhookConfig({ url: '', urlsByRegion: {} });
         this._syncBanner();
+        this._syncSystemPill();
         if (Store.isRemoteApiEnabled() && (!res || !res.ok)) {
           ToastService.show('Desconectado aqui; não atualizou no servidor.', 'warning');
         } else {
@@ -9458,6 +9487,7 @@ const Controllers = {
       );
 
       this._syncBanner();
+      this._syncSystemPill();
     },
   },
 

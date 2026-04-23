@@ -80,7 +80,7 @@ function jsonResponse(array $payload, int $status = 200): void
         header('Access-Control-Allow-Origin: ' . $sameOrigin);
         header('Vary: Origin');
     }
-    header('Access-Control-Allow-Methods: GET,POST,DELETE,OPTIONS');
+    header('Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type');
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;

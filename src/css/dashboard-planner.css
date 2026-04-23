@@ -402,6 +402,15 @@ body.planner-dash-mode .planner-status-pill .planner-status-dot {
   background: var(--pl-positive);
 }
 
+body.planner-dash-mode .planner-status-pill.planner-status-pill--danger {
+  background: color-mix(in srgb, var(--pl-danger) 18%, var(--pl-surface));
+  border-color: color-mix(in srgb, var(--pl-danger) 45%, var(--pl-border));
+  color: var(--pl-danger);
+}
+body.planner-dash-mode .planner-status-pill.planner-status-pill--danger .planner-status-dot {
+  background: var(--pl-danger);
+}
+
 body.planner-dash-mode .icon-btn {
   width: 44px;
   height: 44px;
