@@ -26,11 +26,10 @@ try {
     // Tabelas com updated_at no schema.sql
     $tasksTs = $getMaxTs('tasks');
     $opTasksTs = $getMaxTs('op_tasks');
-    $calTs = $getMaxTs('calendar_notes');
     $cfgTs = $getMaxTs('app_config');
     $notifsTs = $getMaxTs('app_notification');
     $actTs = $getMaxTs('app_activity_event');
-    $maxTs = max($tasksTs, $opTasksTs, $calTs, $cfgTs, $notifsTs);
+    $maxTs = max($tasksTs, $opTasksTs, $cfgTs, $notifsTs);
     $maxTs = max($maxTs, $actTs);
 
     $changedTasks = [];
@@ -79,7 +78,6 @@ try {
         'ok' => true,
         'tasks' => $tasksTs,
         'opTasks' => $opTasksTs,
-        'calendarNotes' => $calTs,
         'config' => $cfgTs,
         'notifications' => $notifsTs,
         'activity' => $actTs,

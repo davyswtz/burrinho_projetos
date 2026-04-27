@@ -7,11 +7,11 @@ html:has(body.auth-locked) {
 #loginScreen {
   --bg: #f0ede8;
   --dark: #1a1a2e;
-  --red: #e84040;
+  --red: #2dff6e;
   --muted: rgba(26, 26, 46, 0.35);
-  --red-glow-1: rgba(232, 64, 64, 0.15);
-  --red-glow-2: rgba(232, 64, 64, 0.08);
-  --red-shadow: rgba(232, 64, 64, 0.35);
+  --red-glow-1: rgba(45, 255, 110, 0.15);
+  --red-glow-2: rgba(45, 255, 110, 0.08);
+  --red-shadow: rgba(45, 255, 110, 0.28);
   --font-display: 'Bebas Neue', sans-serif;
   --font-body: 'DM Sans', sans-serif;
   --font-mono: 'DM Mono', monospace;
@@ -22,8 +22,8 @@ html:has(body.auth-locked) {
   --color-login-bg: #f0ede8;
   --color-login-ink: #1a1a2e;
   --color-login-muted: rgba(26, 26, 46, 0.35);
-  --color-login-red: #e84040;
-  --color-login-on-red: #ffffff;
+  --color-login-red: #2dff6e;
+  --color-login-on-red: #07130b;
   --color-login-border: rgba(26, 26, 46, 0.08);
   --color-login-border-2: rgba(26, 26, 46, 0.20);
   --color-login-right-bg: #1a1a2e;
@@ -32,9 +32,9 @@ html:has(body.auth-locked) {
   --color-login-right-weak-3: rgba(255, 255, 255, 0.15);
   --color-login-right-border: rgba(255, 255, 255, 0.08);
   --color-login-right-input: rgba(255, 255, 255, 0.04);
-  --color-login-red-glow-1: rgba(232, 64, 64, 0.15);
-  --color-login-red-glow-2: rgba(232, 64, 64, 0.08);
-  --color-login-red-shadow: rgba(232, 64, 64, 0.35);
+  --color-login-red-glow-1: rgba(45, 255, 110, 0.15);
+  --color-login-red-glow-2: rgba(45, 255, 110, 0.08);
+  --color-login-red-shadow: rgba(45, 255, 110, 0.28);
 }
 
 #loginScreen *,
@@ -267,8 +267,8 @@ html:has(body.auth-locked) {
 }
 
 #loginScreen .input-wrap input:focus {
-  border-color: var(--color-danger-border);
-  background: var(--color-danger-dim);
+  border-color: rgba(45, 255, 110, 0.34);
+  background: rgba(45, 255, 110, 0.08);
 }
 
 #loginScreen .field-icon {
@@ -284,7 +284,7 @@ html:has(body.auth-locked) {
 }
 
 #loginScreen .input-wrap:focus-within .field-icon {
-  color: var(--color-danger);
+  color: var(--red);
 }
 
 #loginScreen .input-wrap input:-webkit-autofill,

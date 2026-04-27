@@ -29,12 +29,12 @@ Ex.: public_html → tudo abaixo dentro de public_html.
     .htaccess
     credentials.php            (copie de credentials.example.php)
     db.php, bootstrap.php, login.php, config.php
-    tasks.php, op_tasks.php, op_task_image.php, calendar_notes.php, chat.php, op_desc_images.inc.php
+    tasks.php, op_tasks.php, op_task_image.php, chat.php, op_desc_images.inc.php
 
 Opcional no api/: migrations/, schema.sql (phpMyAdmin / backup).
 
 NÃO ENVIE (não são PHP): api/config.js, api/bootstrap.js, api/tasks.js, api/op-tasks.js,
-api/calendar-notes.js, api/_store.js e pasta lib/ (artefatos opcionais fora da HostGator).
+api/_store.js e pasta lib/ (artefatos opcionais fora da HostGator).
 
 Banco: importe api/schema.sql (ou migrations) no phpMyAdmin.
 

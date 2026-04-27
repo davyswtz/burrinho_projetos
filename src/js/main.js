@@ -410,21 +410,6 @@ const Store = (() => {
   const localNote = readLocal(STORAGE_KEYS.note, '');
   if (typeof localNote === 'string') plannerConfig.note = localNote;
 
-  const calendarStorageKey = 'planner.calendar.notes.v2';
-  let calendarNotes = [];
-  try {
-    const raw = localStorage.getItem(calendarStorageKey);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) calendarNotes = parsed;
-    }
-  } catch {
-    calendarNotes = [];
-  }
-  let nextCalendarNoteId = calendarNotes.reduce((max, n) => Math.max(max, n.id || 0), 0) + 1;
-  const persistCalendarNotes = () => {
-    try { localStorage.setItem(calendarStorageKey, JSON.stringify(calendarNotes)); } catch {}
-  };
   const persistSnapshot = () => {
     writeLocal(STORAGE_KEYS.tasks, tasks);
     writeLocal(STORAGE_KEYS.opTasks, opTasks);
@@ -700,31 +685,6 @@ const Store = (() => {
       syncConfig();
     },
 
-    // Calendar Notes
-    getCalendarNotes: () => [...calendarNotes],
-    getCalendarNotesByDate: (isoDate) => calendarNotes.filter(n => n.date === isoDate),
-    findCalendarNote: (id) => calendarNotes.find(n => Number(n?.id) === Number(id)) || null,
-    addCalendarNote: (data) => {
-      const note = { id: nextCalendarNoteId++, ...data, createdAt: new Date().toISOString() };
-      calendarNotes.push(note);
-      persistCalendarNotes();
-      ApiService.requestAny(['/calendar_notes.php', '/calendar-notes'], { method: 'POST', body: JSON.stringify(note) });
-      return note;
-    },
-    updateCalendarNote: (id, patch) => {
-      const idx = calendarNotes.findIndex(n => Number(n?.id) === Number(id));
-      if (idx === -1) return null;
-      Object.assign(calendarNotes[idx], patch);
-      persistCalendarNotes();
-      ApiService.requestAny(['/calendar_notes.php', '/calendar-notes'], { method: 'POST', body: JSON.stringify(calendarNotes[idx]) });
-      return calendarNotes[idx];
-    },
-    removeCalendarNote: (id) => {
-      const sizeBefore = calendarNotes.length;
-      calendarNotes = calendarNotes.filter(n => n.id !== id);
-      if (calendarNotes.length !== sizeBefore) persistCalendarNotes();
-      ApiService.requestAny(['/calendar_notes.php', '/calendar-notes'], { method: 'DELETE', body: JSON.stringify({ id }) });
-    },
     bootstrapFromRemote: async () => {
       const payload = await ApiService.getBootstrap();
       if (payload && typeof payload === 'object' && payload.ok === false && payload.error === 'unauthorized') {
@@ -781,10 +741,6 @@ const Store = (() => {
       if (payload.plannerConfig && typeof payload.plannerConfig === 'object') {
         Object.assign(plannerConfig, payload.plannerConfig);
       }
-      if (Array.isArray(payload.calendarNotes)) {
-        calendarNotes = payload.calendarNotes;
-        nextCalendarNoteId = calendarNotes.reduce((max, n) => Math.max(max, n.id || 0), 0) + 1;
-      }
       if (Array.isArray(payload.notifications)) {
         ChatMentionNotifs.processIncomingTaskNotifications(payload.notifications);
       }
@@ -793,7 +749,6 @@ const Store = (() => {
       }
       applyDefaultWebhookUrlIfNeeded();
       persistSnapshot();
-      persistCalendarNotes();
       if (ApiService.enabled()) {
         void syncConfig();
       }
@@ -943,14 +898,6 @@ const Utils = {
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;');
-  },
-
-  /** Corta texto para caber em células pequenas do calendário. */
-  truncateForCalendar(label, maxLen = 26) {
-    const str = String(label ?? '').trim();
-    if (!str) return '';
-    if (str.length <= maxLen) return str;
-    return `${str.slice(0, maxLen - 1)}…`;
   },
 
   /** Tempo relativo curto para mensagens do chat (tooltip: formatChatFullDateTime). */
@@ -1259,8 +1206,10 @@ const WebhookService = {
     return `<${raw}>`;
   },
 
-  _resolveTechnicianDisplay(task) {
+  _resolveTechnicianDisplay(task, options = {}) {
     const name = String(task?.responsavel || '').trim() || 'Não informado';
+    if (options && options.mention === false) return name;
+
     const direct = String(task?.responsavelChatId || '').trim();
     const mention = this._formatChatMention(direct);
     if (mention) return mention;
@@ -1333,7 +1282,7 @@ const WebhookService = {
   _buildCemigMessage(event, task) {
     const B = (lines) => this._rompimentoBoldLines(lines);
     const s = (x) => this._chatSafe(String(x ?? '').trim());
-    const tecnico = this._resolveTechnicianDisplay(task);
+    const tecnico = this._resolveTechnicianDisplay(task, { mention: event === 'andamento' });
     const enviado = s(String(task?.assinadaPor || '').trim() || '—');
     const taskId = s(String(task.taskCode || `CEM-${String(task.id || '').padStart(4, '0')}`).trim());
     const addrLine = this._formatCemigEnderecoLine(task);
@@ -1396,7 +1345,7 @@ const WebhookService = {
    */
   _buildOtimRedeMessage(event, task) {
     const B = (lines) => this._rompimentoBoldLines(lines);
-    const tecnico = this._resolveTechnicianDisplay(task);
+    const tecnico = this._resolveTechnicianDisplay(task, { mention: event === 'andamento' });
     const enviadoPor = String(task?.assinadaPor || '').trim() || '—';
     const code = String(task.taskCode || '').trim();
     const synthetic = Utils.syntheticOpTaskCode(task);
@@ -1511,7 +1460,7 @@ const WebhookService = {
    * @param {'andamento'|'concluida'|'finalizada'} event
    */
   _buildTrocaPosteMessage(event, task) {
-    const tecnico = this._resolveTechnicianDisplay(task);
+    const tecnico = this._resolveTechnicianDisplay(task, { mention: event === 'andamento' });
     const regiao = (task.regiao || '').trim() || 'Não informada';
     const assinatura = String(task?.assinadaPor || '').trim();
     const titulo = (task.titulo || '').trim();
@@ -1607,7 +1556,7 @@ const WebhookService = {
    * @param {'andamento'|'concluida'|'finalizada'} event
    */
   _buildTrocaEtiquetaMessage(event, task) {
-    const tecnico = this._resolveTechnicianDisplay(task);
+    const tecnico = this._resolveTechnicianDisplay(task, { mention: event === 'andamento' });
     const enviadoPor = String(task?.assinadaPor || '').trim() || '—';
     const code = String(task?.taskCode || '').trim();
     const synthetic = (typeof Utils !== 'undefined' && typeof Utils.syntheticOpTaskCode === 'function')
@@ -1645,7 +1594,7 @@ const WebhookService = {
    * @param {'andamento'|'concluida'|'finalizada'} event
    */
   _buildCorrecaoAtenuacaoMessage(event, task) {
-    const tecnico = this._resolveTechnicianDisplay(task);
+    const tecnico = this._resolveTechnicianDisplay(task, { mention: event === 'andamento' });
     const enviadoPor = String(task?.assinadaPor || '').trim() || '—';
     const code = String(task?.taskCode || '').trim();
     const synthetic = (typeof Utils !== 'undefined' && typeof Utils.syntheticOpTaskCode === 'function')
@@ -1713,7 +1662,7 @@ const WebhookService = {
   _buildQualidadePotenciaMessage(event, task) {
     const B = (lines) => this._rompimentoBoldLines(lines);
     const s = (x) => this._chatSafe(String(x ?? '').trim());
-    const tecnico = this._resolveTechnicianDisplay(task);
+    const tecnico = this._resolveTechnicianDisplay(task, { mention: event === 'andamento' });
     const enviadoPor = s(String(task?.assinadaPor || '').trim() || '—');
     const code = s(String(task?.taskCode || '').trim());
     const synthetic = (typeof Utils !== 'undefined' && typeof Utils.syntheticOpTaskCode === 'function')
@@ -1792,7 +1741,7 @@ const WebhookService = {
   _buildManutencaoCorretivaMessage(event, task) {
     const B = (lines) => this._rompimentoBoldLines(lines);
     const s = (x) => this._chatSafe(String(x ?? '').trim());
-    const tecnico = this._resolveTechnicianDisplay(task); // já vem com menção quando possível
+    const tecnico = this._resolveTechnicianDisplay(task, { mention: event === 'andamento' });
     const enviadoPor = s(String(task?.assinadaPor || '').trim() || '—');
     const code = s(String(task?.taskCode || '').trim());
     const synthetic = (typeof Utils !== 'undefined' && typeof Utils.syntheticOpTaskCode === 'function')
@@ -2215,7 +2164,7 @@ const WebhookService = {
     if (opCat === 'rompimentos' && (event === 'concluida' || event === 'finalizada')) {
       const setor = task.setor || 'Não informado';
       const regiao = task.regiao || 'Não informada';
-      const tecnico = this._resolveTechnicianDisplay(task);
+      const tecnico = this._resolveTechnicianDisplay(task, { mention: false });
       const assinatura = String(task?.assinadaPor || '').trim();
       const localizacao = task.coordenadas || 'Não informada';
       const endereco = task.localizacaoTexto || 'Não informado';
@@ -2602,613 +2551,6 @@ const OpTaskService = {
     return counts;
   },
 };
-
-/* ─────────────────────────────────────────────────────────────
-   CALENDAR SERVICE — Agenda mensal com anotações
-───────────────────────────────────────────────────────────── */
-const CalendarService = {
-  currentMonthDate: (() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  })(),
-  selectedDateIso: Utils.todayIso(),
-
-  weekdayLabels: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'],
-
-  getMonthMatrix(monthDate) {
-    const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-    const start = new Date(first);
-    start.setDate(start.getDate() - first.getDay());
-
-    const days = [];
-    for (let i = 0; i < 42; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      days.push({
-        iso: Utils.toIsoLocal(d),
-        day: d.getDate(),
-        month: d.getMonth(),
-        year: d.getFullYear(),
-        isCurrentMonth: d.getMonth() === monthDate.getMonth(),
-      });
-    }
-    return days;
-  },
-
-  _mapTaskToCalendarItem(task) {
-    return {
-      id: task.id,
-      source: task.source,
-      sourceLabel: task.sourceLabel,
-      title: task.titulo,
-      description: task.descricao || '',
-      status: task.effectiveStatus || task.status,
-      priority: task.prioridade,
-      regiao: task.regiao || '',
-      removable: false,
-      copyRef: Utils.unifiedTaskDisplayRef(task),
-      isOpTask: task.source === 'operacional',
-    };
-  },
-
-  _mapNoteToCalendarItem(note) {
-    return {
-      id: note.id,
-      source: 'note',
-      sourceLabel: 'Anotação',
-      title: note.title,
-      description: note.description || '',
-      status: 'Anotado',
-      priority: note.priority,
-      removable: true,
-      copyRef: '',
-    };
-  },
-
-  getItemsByDate(isoDate) {
-    const tasks = TaskService.getAllDashboardTasks()
-      .filter(t => t.prazo === isoDate)
-      .map(t => this._mapTaskToCalendarItem(t));
-    const notes = Store.getCalendarNotesByDate(isoDate).map(n => this._mapNoteToCalendarItem(n));
-    return [...tasks, ...notes];
-  },
-
-  getDayMeta(isoDate) {
-    const tasks = TaskService.getAllDashboardTasks().filter(t => t.prazo === isoDate);
-    const notes = Store.getCalendarNotesByDate(isoDate);
-    return {
-      total: tasks.length + notes.length,
-      dashboard: tasks.filter(t => t.source === 'dashboard').length,
-      operacional: tasks.filter(t => t.source === 'operacional').length,
-      note: notes.length,
-    };
-  },
-
-  createNote(data) {
-    return Store.addCalendarNote(data);
-  },
-
-  updateNote(id, patch) {
-    return Store.updateCalendarNote(id, patch);
-  },
-
-  removeNote(id) {
-    Store.removeCalendarNote(id);
-  },
-};
-
-/* ─────────────────────────────────────────────────────────────
-   CALENDAR (novo UI) — Design "cal-*" com dados reais
-   Reaproveita Store + TaskService + CalendarService (sem mudar backend).
-───────────────────────────────────────────────────────────── */
-const CalendarV2 = (() => {
-  const state = {
-    builtFilters: false,
-    search: '',
-    // filtros: quando true = filtra (mantém apenas correspondentes); quando false = ignora filtro
-    filters: {
-      rompimentos: true,
-      alta: true,
-      emAndamento: true,
-      manutencao: true,
-    },
-  };
-
-  const monthNames = [
-    'janeiro','fevereiro','março','abril','maio','junho',
-    'julho','agosto','setembro','outubro','novembro','dezembro',
-  ];
-  const daysShort = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const daysLong = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
-
-  const el = (id) => document.getElementById(id);
-
-  const isoFromYMD = (y, m0, d) => `${String(y)}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-
-  const normalize = (s) => String(s || '').trim().toLowerCase();
-
-  const getOpTaskById = (id) => {
-    const list = Store.getOpTasks ? Store.getOpTasks() : [];
-    return Array.isArray(list) ? list.find(t => Number(t?.id) === Number(id)) : null;
-  };
-
-  const toEvent = (dateIso, item) => {
-    const isNote = item.source === 'note';
-    const op = item.isOpTask ? getOpTaskById(item.id) : null;
-    const categoriaRaw = op?.categoria ? String(op.categoria) : (item.source === 'dashboard' ? 'dashboard' : '');
-
-    const categoryLabel = (() => {
-      const c = normalize(categoriaRaw);
-      if (c === 'rompimentos') return 'Rompimentos';
-      if (c === 'manutencao-corretiva') return 'Manutenção';
-      if (c) return categoriaRaw;
-      if (isNote) return 'Anotação';
-      return item.sourceLabel || 'Tarefa';
-    })();
-
-    const coords = (() => {
-      const c = String(op?.coordenadas || '').trim();
-      const loc = String(op?.localizacaoTexto || '').trim();
-      if (c && loc) return `${c}\n${loc}`;
-      if (c) return c;
-      if (loc) return loc;
-      // fallback: mostrar região quando existir
-      const r = String(item.regiao || '').trim();
-      return r ? `Região: ${r}` : '';
-    })();
-
-    return {
-      id: item.id,
-      date: dateIso,
-      title: item.title || '',
-      category: categoryLabel,
-      priority: String(item.priority || 'Média'),
-      status: String(item.status || ''),
-      removable: Boolean(item.removable),
-      isOpTask: Boolean(item.isOpTask),
-      copyRef: String(item.copyRef || ''),
-      sourceLabel: String(item.sourceLabel || ''),
-      description: String(item.description || ''),
-      coords,
-      // para badge extra (ex.: tipo backup) — não existe no modelo atual, mas deixamos compatível
-      tipo: '',
-    };
-  };
-
-  const matchesFilters = (ev) => {
-    const q = normalize(state.search);
-    const passSearch = !q || normalize(ev.title).includes(q) || normalize(ev.category).includes(q) || normalize(ev.coords).includes(q);
-    if (!passSearch) return false;
-
-    const anyOn = Object.values(state.filters).some(Boolean);
-    if (!anyOn) return true;
-
-    let ok = true;
-    if (state.filters.rompimentos) ok = ok && normalize(ev.category) === 'rompimentos';
-    if (state.filters.manutencao) ok = ok && normalize(ev.category).includes('manuten');
-    if (state.filters.alta) ok = ok && normalize(ev.priority) === 'alta';
-    if (state.filters.emAndamento) ok = ok && normalize(ev.status) === 'em andamento';
-    return ok;
-  };
-
-  const eventsByDate = (dateIso) => CalendarService.getItemsByDate(dateIso).map(it => toEvent(dateIso, it)).filter(matchesFilters);
-
-  const renderTopbar = () => {
-    const monthDate = CalendarService.currentMonthDate;
-    const lbl = el('cal-month-label');
-    if (lbl) lbl.textContent = `${monthNames[monthDate.getMonth()]} de ${monthDate.getFullYear()}`;
-
-    const filterWrap = el('cal-filters');
-    if (filterWrap && !state.builtFilters) {
-      state.builtFilters = true;
-      const defs = [
-        { key: 'rompimentos', label: 'Rompimentos', color: 'blue' },
-        { key: 'alta', label: 'Alta', color: 'red' },
-        { key: 'emAndamento', label: 'Em andamento', color: 'green' },
-        { key: 'manutencao', label: 'Manutenção', color: 'amber' },
-      ];
-      filterWrap.innerHTML = '';
-      defs.forEach(d => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `cal-filter-pill cal-fp-${d.color} cal-fp-active`;
-        btn.textContent = d.label;
-        btn.addEventListener('click', () => {
-          state.filters[d.key] = !state.filters[d.key];
-          btn.classList.toggle('cal-fp-active');
-          renderAll();
-        });
-        filterWrap.appendChild(btn);
-      });
-    }
-  };
-
-  const renderMiniCal = () => {
-    const g = el('cal-mini-grid');
-    if (!g) return;
-    g.innerHTML = '';
-    ['D','S','T','Q','Q','S','S'].forEach(d => {
-      const h = document.createElement('div');
-      h.className = 'cal-mc-hdr';
-      h.textContent = d;
-      g.appendChild(h);
-    });
-
-    const monthDate = CalendarService.currentMonthDate;
-    const y = monthDate.getFullYear();
-    const m0 = monthDate.getMonth();
-    const firstDay = new Date(y, m0, 1).getDay();
-    const daysInMonth = new Date(y, m0 + 1, 0).getDate();
-    const prevDays = new Date(y, m0, 0).getDate();
-
-    for (let i = 0; i < firstDay; i++) {
-      const elDay = document.createElement('div');
-      elDay.className = 'cal-mc-day cal-mc-other';
-      elDay.textContent = String(prevDays - firstDay + 1 + i);
-      g.appendChild(elDay);
-    }
-
-    const todayIso = Utils.todayIso();
-    for (let d = 1; d <= daysInMonth; d++) {
-      const iso = isoFromYMD(y, m0, d);
-      const isToday = iso === todayIso;
-      const isSel = iso === CalendarService.selectedDateIso;
-      const hasEv = eventsByDate(iso).length > 0;
-      const elDay = document.createElement('div');
-      elDay.className =
-        'cal-mc-day' +
-        (isToday ? ' cal-mc-today' : '') +
-        (isSel && !isToday ? ' cal-mc-selected' : '') +
-        (hasEv ? ' cal-mc-has-ev' : '');
-      elDay.textContent = String(d);
-      elDay.addEventListener('click', () => {
-        CalendarService.selectedDateIso = iso;
-        renderAll();
-      });
-      g.appendChild(elDay);
-    }
-  };
-
-  const renderHeatmap = () => {
-    const g = el('cal-heatmap');
-    if (!g) return;
-    g.innerHTML = '';
-    const monthDate = CalendarService.currentMonthDate;
-    const y = monthDate.getFullYear();
-    const m0 = monthDate.getMonth();
-    const daysInMonth = new Date(y, m0 + 1, 0).getDate();
-    const firstDay = new Date(y, m0, 1).getDay();
-    const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
-
-    for (let i = 0; i < totalCells; i++) {
-      const d = i - firstDay + 1;
-      const cell = document.createElement('div');
-      let count = 0;
-      if (d >= 1 && d <= daysInMonth) {
-        const iso = isoFromYMD(y, m0, d);
-        count = eventsByDate(iso).length;
-      }
-      const lvl = count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : count <= 4 ? 3 : 4;
-      cell.className = `cal-hm-cell cal-hm-${lvl}`;
-      cell.title = d >= 1 && d <= daysInMonth ? `Dia ${d}: ${count} evento(s)` : '';
-      g.appendChild(cell);
-    }
-  };
-
-  const renderStats = () => {
-    const todayIso = Utils.todayIso();
-    const monthDate = CalendarService.currentMonthDate;
-    const y = monthDate.getFullYear();
-    const m0 = monthDate.getMonth();
-    const daysInMonth = new Date(y, m0 + 1, 0).getDate();
-
-    let monthCount = 0;
-    let highCount = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
-      const iso = isoFromYMD(y, m0, d);
-      const evs = eventsByDate(iso);
-      monthCount += evs.length;
-      highCount += evs.filter(e => normalize(e.priority) === 'alta').length;
-    }
-    const todayCount = eventsByDate(todayIso).length;
-
-    if (el('stat-today')) el('stat-today').textContent = String(todayCount);
-    if (el('stat-high')) el('stat-high').textContent = String(highCount);
-    if (el('stat-month')) el('stat-month').textContent = String(monthCount);
-  };
-
-  const renderTimeline = () => {
-    const cont = el('cal-timeline-left');
-    if (!cont) return;
-    cont.innerHTML = '';
-    const todayIso = Utils.todayIso();
-    const evs = eventsByDate(todayIso).slice(0, 4);
-    if (!evs.length) {
-      cont.innerHTML = '<div style="font-size:11px;color:#374151">Nenhum evento hoje</div>';
-      return;
-    }
-    evs.forEach((ev, i) => {
-      const item = document.createElement('div');
-      item.className = 'cal-tl-item';
-      item.innerHTML =
-        '<div class="cal-tl-line">' +
-          `<div class="cal-tl-dot${i === 0 ? ' cal-tl-active' : ''}"></div>` +
-          (i < evs.length - 1 ? '<div class="cal-tl-connector"></div>' : '') +
-        '</div>' +
-        '<div class="cal-tl-label">' +
-          `<strong>${i === 0 ? 'Agora' : Utils.escapeHtml(ev.category || 'Evento')}</strong><br>` +
-          Utils.escapeHtml(Utils.truncateForCalendar(ev.title || '', 28)) +
-        '</div>';
-      cont.appendChild(item);
-    });
-  };
-
-  const renderGrid = () => {
-    const hdrs = el('cal-day-headers');
-    if (hdrs && !hdrs.dataset.built) {
-      hdrs.dataset.built = '1';
-      hdrs.innerHTML = '';
-      daysShort.forEach(d => {
-        const h = document.createElement('div');
-        h.className = 'cal-dh';
-        h.textContent = d;
-        hdrs.appendChild(h);
-      });
-    }
-
-    const g = el('cal-grid');
-    if (!g) return;
-    g.innerHTML = '';
-
-    const monthDate = CalendarService.currentMonthDate;
-    const y = monthDate.getFullYear();
-    const m0 = monthDate.getMonth();
-    const firstDay = new Date(y, m0, 1).getDay();
-    const daysInMonth = new Date(y, m0 + 1, 0).getDate();
-    const prevDays = new Date(y, m0, 0).getDate();
-    const todayIso = Utils.todayIso();
-
-    const createCell = (d, isOther) => {
-      const cell = document.createElement('div');
-      const iso = isOther ? '' : isoFromYMD(y, m0, d);
-      const isToday = !isOther && iso === todayIso;
-      const isSel = !isOther && iso === CalendarService.selectedDateIso;
-      cell.className =
-        'cal-cell' +
-        (isOther ? ' cal-cell-dim' : '') +
-        (isToday ? ' cal-cell-today' : '') +
-        (isSel ? ' cal-cell-selected' : '');
-
-      let html = `<div class="cal-dnum">${d}</div>`;
-      if (isToday) {
-        html += '<div class="cal-today-badge"><div class="cal-today-dot"></div><span>hoje</span></div>';
-      }
-      if (!isOther) {
-        const evs = eventsByDate(iso);
-        const max = isToday ? 3 : 2;
-        evs.slice(0, max).forEach(ev => {
-          const cls = (() => {
-            const p = normalize(ev.priority);
-            if (p === 'alta') return 'cal-ep-red';
-            if (p === 'media' || p === 'média') return 'cal-ep-amber';
-            const c = normalize(ev.category);
-            if (c.includes('manuten')) return 'cal-ep-amber';
-            if (c === 'rompimentos') return 'cal-ep-blue';
-            return 'cal-ep-green';
-          })();
-          html += `<div class="cal-ev-pill ${cls}">${Utils.escapeHtml(Utils.truncateForCalendar(ev.title || '', 26))}</div>`;
-        });
-        if (evs.length > max) {
-          html += `<div class="cal-overflow-tag">+${evs.length - max} mais</div>`;
-        }
-        if (evs.length > 0) {
-          const done = evs.filter(ev => {
-            const s = normalize(ev.status);
-            return s.includes('conclu') || s.includes('finaliz');
-          }).length;
-          const pct = Math.round((done / evs.length) * 100);
-          html += `<div class="cal-progress-bar"><div class="cal-progress-fill" style="width:${pct}%"></div></div>`;
-        }
-      }
-      cell.innerHTML = html;
-
-      if (!isOther) {
-        cell.addEventListener('click', () => {
-          CalendarService.selectedDateIso = iso;
-          renderAll();
-        });
-      }
-      return cell;
-    };
-
-    for (let i = 0; i < firstDay; i++) {
-      const d = prevDays - firstDay + 1 + i;
-      g.appendChild(createCell(d, true));
-    }
-    for (let d = 1; d <= daysInMonth; d++) g.appendChild(createCell(d, false));
-    const total = firstDay + daysInMonth;
-    const rest = total % 7 === 0 ? 0 : 7 - (total % 7);
-    for (let d = 1; d <= rest; d++) g.appendChild(createCell(d, true));
-  };
-
-  const renderSidebar = () => {
-    const body = el('cal-rp-body');
-    const dateLbl = el('cal-rp-date');
-    if (!body || !dateLbl) return;
-
-    const dateIso = CalendarService.selectedDateIso || Utils.todayIso();
-    const [yy, mm, dd] = dateIso.split('-').map(Number);
-    const dow = new Date(yy, mm - 1, dd).getDay();
-    dateLbl.textContent = `${daysLong[dow]}, ${dd} de ${monthNames[mm - 1]} de ${yy}`;
-
-    const evs = eventsByDate(dateIso);
-    body.innerHTML = '';
-    if (!evs.length) {
-      body.innerHTML = '<div class="cal-empty-state">Nenhum evento neste dia</div>';
-      return;
-    }
-
-    const badgePriority = (p) => {
-      const n = normalize(p);
-      if (n === 'alta') return '<span class="cal-badge cal-b-high">Alta</span>';
-      if (n === 'media' || n === 'média') return '<span class="cal-badge cal-b-mid">Média</span>';
-      return '<span class="cal-badge cal-b-low">Baixa</span>';
-    };
-
-    const priorityClass = (p) => {
-      const n = normalize(p);
-      if (n === 'alta') return 'cal-ev-high';
-      if (n === 'media' || n === 'média') return 'cal-ev-mid';
-      return 'cal-ev-low';
-    };
-
-    const progressValue = (status) => {
-      const s = normalize(status);
-      if (s.includes('conclu') || s.includes('finaliz')) return 100;
-      if (s.includes('andamento')) return 50;
-      return 0;
-    };
-
-    evs.forEach(ev => {
-      const card = document.createElement('div');
-      card.className = `cal-ev-card ${priorityClass(ev.priority)}`;
-      card.addEventListener('click', () => {
-        if (ev.removable) {
-          Controllers.calendar?._openEditNoteModal?.(Number(ev.id));
-          return;
-        }
-        if (ev.isOpTask) {
-          Controllers.opTask?.openEditModal?.(Number(ev.id));
-          return;
-        }
-      });
-
-      const pct = progressValue(ev.status);
-      const badges = [
-        ev.status ? `<span class="cal-badge cal-b-active">${Utils.escapeHtml(ev.status)}</span>` : '',
-        badgePriority(ev.priority),
-      ].filter(Boolean).join('');
-
-      const menuLabel = ev.removable ? 'Remover anotação' : (ev.isOpTask ? 'Ações' : 'Ações');
-      card.innerHTML =
-        '<div class="cal-ec-top">' +
-          `<div class="cal-ec-title">${Utils.escapeHtml(ev.title)}</div>` +
-          `<button class="cal-ec-menu" type="button" data-id="${ev.id}" aria-label="${menuLabel}">&#8942;</button>` +
-        '</div>' +
-        `<div class="cal-ec-meta">${Utils.escapeHtml(ev.category)}</div>` +
-        (badges ? `<div class="cal-ec-badges">${badges}</div>` : '') +
-        (ev.coords ? `<div class="cal-ec-coords">${Utils.escapeHtml(ev.coords).replace(/\n/g, '<br>')}</div>` : '') +
-        `<div class="cal-ec-progress"><div class="cal-ec-progress-fill" style="width:${pct}%"></div></div>` +
-        // FIX: preserva campos/botões existentes (copiar ref + status picker) quando aplicável
-        `<div class="cal-ec-badges" style="margin-top:10px;gap:6px">
-          ${ev.copyRef ? Utils.taskCopyProtocolButtonHtml(ev.copyRef, 'task-copy-id-btn--sm') : ''}
-          ${ev.isOpTask ? Utils.opTaskStatusPickerButtonHtml(ev.id, 'op-status-picker-btn--sm') : ''}
-        </div>`;
-
-      const menuBtn = card.querySelector('.cal-ec-menu');
-      menuBtn?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (ev.removable) return Controllers.calendar?._openEditNoteModal?.(Number(ev.id));
-        // Para tarefa, mantemos apenas como "menu" neutro (sem mudar comportamento existente do sistema).
-        ToastService.show('Ações do item: use o status ou copie o protocolo', 'info');
-      });
-
-      body.appendChild(card);
-    });
-  };
-
-  const renderUpcoming = () => {
-    const cont = el('cal-upcoming');
-    if (!cont) return;
-    cont.innerHTML = '';
-    const todayIso = Utils.todayIso();
-    const todayTs = new Date(`${todayIso}T00:00:00`).getTime();
-
-    // Próximos eventos: varre os próximos 45 dias para manter custo baixo.
-    const upcoming = [];
-    for (let i = 1; i <= 45; i++) {
-      const iso = Utils.addDaysIso(i);
-      eventsByDate(iso).forEach(ev => upcoming.push(ev));
-      if (upcoming.length >= 8) break;
-    }
-
-    const list = upcoming
-      .filter(ev => new Date(`${ev.date}T00:00:00`).getTime() > todayTs)
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(0, 5);
-
-    if (!list.length) {
-      cont.innerHTML = '<div style="font-size:11px;color:#374151;padding:4px 0">Sem próximos eventos</div>';
-      return;
-    }
-
-    list.forEach(ev => {
-      const [yy, mm, dd] = ev.date.split('-').map(Number);
-      const item = document.createElement('div');
-      item.className = 'cal-upcoming-item';
-      item.innerHTML =
-        '<div class="cal-upcoming-dot"></div>' +
-        '<div class="cal-upcoming-text">' +
-          `<strong>${dd} ${monthNames[mm - 1].slice(0, 3)}</strong><br>` +
-          `${Utils.escapeHtml(Utils.truncateForCalendar(ev.title || '', 30))}` +
-        '</div>';
-      cont.appendChild(item);
-    });
-  };
-
-  const renderAll = () => {
-    renderTopbar();
-    renderMiniCal();
-    renderHeatmap();
-    renderStats();
-    renderTimeline();
-    renderGrid();
-    renderSidebar();
-    renderUpcoming();
-  };
-
-  const bindOnce = () => {
-    const app = el('cal-app');
-    if (!app || app.dataset.bound) return;
-    app.dataset.bound = '1';
-
-    el('cal-prev')?.addEventListener('click', () => {
-      const d = CalendarService.currentMonthDate;
-      CalendarService.currentMonthDate = new Date(d.getFullYear(), d.getMonth() - 1, 1);
-      renderAll();
-    });
-    el('cal-next')?.addEventListener('click', () => {
-      const d = CalendarService.currentMonthDate;
-      CalendarService.currentMonthDate = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-      renderAll();
-    });
-    el('cal-today-btn')?.addEventListener('click', () => {
-      const now = new Date();
-      CalendarService.currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      CalendarService.selectedDateIso = Utils.todayIso();
-      renderAll();
-    });
-    el('refreshCalendarBtn')?.addEventListener('click', () => {
-      // Mantém o mesmo comportamento do refresh global do app.
-      renderAll();
-    });
-    el('cal-search')?.addEventListener('input', (e) => {
-      state.search = String(e.target.value || '');
-      renderAll();
-    });
-    el('cal-add-btn')?.addEventListener('click', () => {
-      Controllers.calendar._openNoteModal(CalendarService.selectedDateIso || Utils.todayIso());
-    });
-  };
-
-  return {
-    enabled() {
-      return Boolean(el('cal-app') && el('cal-grid') && el('cal-rp-body'));
-    },
-    bindOnce,
-    renderAll,
-  };
-})();
 
 /** Ordem dos itens do menu lateral (persistência local). */
 const SIDEBAR_NAV_ORDER_KEY = 'planner.sidebar.navOrder.v1';
@@ -3753,8 +3095,7 @@ const UI = {
         OpTaskService.changeStatus(id, toStatus);
         this.renderOpPage();
         setTimeout(() => { this._lastMovedOpTask = null; }, 520);
-        UI.renderCalendarPage();
-        ToastService.show(`Tarefa movida para "${toStatus}"`, 'success');
+              ToastService.show(`Tarefa movida para "${toStatus}"`, 'success');
         return;
       }
 
@@ -3821,8 +3162,7 @@ const UI = {
         OpTaskService.changeStatus(draggedId, targetStatus);
         this.renderOpPage();
         setTimeout(() => { this._lastMovedOpTask = null; }, 520);
-        UI.renderCalendarPage();
-        ToastService.show(`Tarefa movida para "${targetStatus}"`, 'success');
+              ToastService.show(`Tarefa movida para "${targetStatus}"`, 'success');
       });
     });
 
@@ -3866,18 +3206,7 @@ const UI = {
         opId: t.source === 'operacional' ? t.id : null,
       }));
 
-    const noteItems = Store.getCalendarNotes()
-      .filter(n => n.date && n.date >= startIso && n.date <= endIso)
-      .map(n => ({
-        date: n.date,
-        text: n.title,
-        source: 'Anotação',
-        copyRef: '',
-        kind: 'note',
-        opId: null,
-      }));
-
-    const agenda = [...taskItems, ...noteItems]
+    const agenda = [...taskItems]
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 10)
       .map(item => {
@@ -3896,7 +3225,7 @@ const UI = {
     const list = document.getElementById('agendaList');
     if (!list) return;
     if (!agenda.length) {
-      list.innerHTML = `<li class="agenda-item"><div><div class="agenda-desc">Nenhum item marcado para esta semana.</div><div class="agenda-time">Adicione tarefas ou anotações no calendário.</div></div></li>`;
+      list.innerHTML = `<li class="agenda-item"><div><div class="agenda-desc">Nenhum item marcado para esta semana.</div><div class="agenda-time">Adicione tarefas com prazo para aparecerem aqui.</div></div></li>`;
       return;
     }
 
@@ -3913,109 +3242,6 @@ const UI = {
         </div>
       </li>
     `).join('');
-  },
-
-  /* ── Calendar ───────────────────────────────────────────── */
-  renderCalendarPage() {
-    // Calendário v3 (calendar.js)
-    if (document.getElementById('cal-app')) {
-      queueMicrotask(() => window.CalendarApp?.init?.());
-      return;
-    }
-    if (CalendarV2.enabled()) {
-      CalendarV2.bindOnce();
-      CalendarV2.renderAll();
-      return;
-    }
-    const monthTitle = document.getElementById('calendarMonthTitle');
-    const weekdays = document.getElementById('calendarWeekdays');
-    const grid = document.getElementById('calendarGrid');
-    if (!monthTitle || !weekdays || !grid) return;
-
-    const monthDate = CalendarService.currentMonthDate;
-    monthTitle.textContent = Utils.monthLabel(monthDate);
-
-    if (!weekdays.dataset.ready) {
-      weekdays.innerHTML = CalendarService.weekdayLabels
-        .map(d => `<div class="calendar-weekday">${d}</div>`)
-        .join('');
-      weekdays.dataset.ready = '1';
-    }
-
-    const today = Utils.todayIso();
-    const selected = CalendarService.selectedDateIso;
-    const days = CalendarService.getMonthMatrix(monthDate);
-
-    grid.innerHTML = days.map(day => {
-      const items = CalendarService.getItemsByDate(day.iso);
-      const preview = items.slice(0, 3);
-      const moreCount = items.length - preview.length;
-      const meta = CalendarService.getDayMeta(day.iso);
-      const dotHtml = [
-        meta.dashboard ? `<span class="calendar-dot dashboard" title="Tarefas do Dashboard"></span>` : '',
-        meta.operacional ? `<span class="calendar-dot operacional" title="Tarefas Operacionais"></span>` : '',
-        meta.note ? `<span class="calendar-dot note" title="Anotações"></span>` : '',
-      ].join('');
-
-      return `
-        <button class="calendar-day ${day.isCurrentMonth ? '' : 'outside'} ${day.iso === today ? 'today' : ''} ${day.iso === selected ? 'selected' : ''}" data-date="${day.iso}" role="gridcell" aria-label="Dia ${day.day}, ${day.month + 1}/${day.year}">
-          <span class="calendar-day-number">${day.day}</span>
-          <span class="calendar-dot-list">${dotHtml}</span>
-          <div class="calendar-day-items">
-            ${preview.map(it => `
-              <div class="calendar-day-item-pill ${it.source === 'note' ? 'note' : 'task'}" title="${Utils.escapeHtml(it.title || '')}">
-                <span class="calendar-day-item-dot ${it.source === 'note' ? 'note' : (it.source === 'dashboard' ? 'dashboard' : 'operacional')}"></span>
-                <span class="calendar-day-item-text">${Utils.escapeHtml(Utils.truncateForCalendar(it.title || ''))}</span>
-              </div>
-            `).join('')}
-            ${moreCount > 0 ? `<div class="calendar-day-more">+${moreCount}</div>` : ''}
-          </div>
-          <span class="calendar-day-count">${meta.total ? `${meta.total} item(ns)` : ''}</span>
-        </button>
-      `;
-    }).join('');
-
-    this.renderCalendarDayDetails();
-  },
-
-  renderCalendarDayDetails() {
-    const label = document.getElementById('calendarSelectedDateLabel');
-    const list = document.getElementById('calendarDayList');
-    if (!label || !list) return;
-
-    const dateIso = CalendarService.selectedDateIso;
-    label.textContent = Utils.prettyDate(dateIso);
-
-    const items = CalendarService.getItemsByDate(dateIso);
-    if (!items.length) {
-      list.innerHTML = `<div class="calendar-empty">Nenhuma tarefa ou anotação para esta data.</div>`;
-      return;
-    }
-
-    list.innerHTML = items.map(item => {
-      const badges = [this.regionBadge(item.regiao), this.statusBadge(item.status), this.priorityBadge(item.priority || 'Média')]
-        .filter(Boolean)
-        .join('');
-      const copyBtn = Utils.taskCopyProtocolButtonHtml(item.copyRef, 'task-copy-id-btn--calendar');
-      const topRight = [
-        item.isOpTask ? Utils.opTaskStatusPickerButtonHtml(item.id, 'op-status-picker-btn--sm') : '',
-        item.removable ? `<button class="calendar-remove-btn" data-remove-note="${item.id}" title="Remover anotação" aria-label="Remover anotação">Remover</button>` : '',
-      ].filter(Boolean).join('');
-      return `
-      <article class="calendar-item">
-        <div class="calendar-item-top">
-          <div class="calendar-item-top-main">
-            ${copyBtn}
-            <span class="calendar-item-title">${item.title}</span>
-          </div>
-          ${topRight ? `<div class="calendar-item-top-actions">${topRight}</div>` : ''}
-        </div>
-        <div class="calendar-item-meta">${item.sourceLabel}</div>
-        ${badges ? `<div class="calendar-item-badges">${badges}</div>` : ''}
-        ${item.description ? `<div class="calendar-item-desc">${item.description}</div>` : ''}
-      </article>
-    `;
-    }).join('');
   },
 
   /* ── Clock ──────────────────────────────────────────────── */
@@ -4085,7 +3311,6 @@ const UI = {
       'troca-etiqueta': { title: 'Troca de etiqueta', crumb: 'Atividade de manutenção' },
       'qualidade-potencia': { title: 'Qualidade de potência', crumb: 'Atividade de manutenção' },
       'manutencao-corretiva': { title: 'Manutenção corretiva', crumb: 'Atividade de manutenção' },
-      calendario: { title: 'Calendário', crumb: 'Agenda' },
       config: { title: 'Configurações', crumb: 'Sistema' },
     };
     const meta = titles[page] || { title: page, crumb: '' };
@@ -4123,7 +3348,6 @@ const UI = {
     if (page === 'correcao-atenuacao') this.renderAtenuacaoDashboardPage();
     if (page === 'troca-etiqueta') this.renderTrocaEtiquetaPage();
     if (page === 'atendimento') this.renderAtendimentoPage();
-    if (page === 'calendario') this.renderCalendarPage();
     if (page === 'dashboard') {
       this.renderDashboard();
       // Garante atualização imediata do ranking/atividade ao entrar no dashboard
@@ -4154,12 +3378,54 @@ const UI = {
       'troca-etiqueta',
       'qualidade-potencia',
       'manutencao-corretiva',
-      'calendario',
       'config',
     ]);
     if (!saved || !allowed.has(saved)) return;
     if (!document.getElementById(`page-${saved}`)) return;
     this.navigateTo(saved);
+  },
+
+  clearTaskIdAutofillFilters(options = {}) {
+    const force = Boolean(options.force);
+    const fields = [
+      { id: 'opTaskIdInput', storeKey: 'opTaskIdSearch', render: () => this.renderKanban() },
+      { id: 'atdOpTaskIdInput', storeKey: 'atdOpTaskIdSearch', render: () => this.renderAtendimentoPage() },
+    ];
+    let shouldRenderOp = false;
+    let shouldRenderAtd = false;
+
+    const normalize = (value) => String(value || '').trim().toLowerCase();
+    const sessionValues = new Set([
+      normalize(getSignedUserName()),
+      normalize(getSessionUserKey()),
+      normalize(localStorage.getItem(SESSION_USER_KEY)),
+    ].filter(Boolean));
+
+    fields.forEach(({ id, storeKey }) => {
+      const el = document.getElementById(id);
+      const value = String(el?.value || '').trim();
+      const storeValue = String(Store[storeKey] || '').trim();
+      const looksLikeSessionUser = value && sessionValues.has(normalize(value));
+      if (!force && !looksLikeSessionUser) return;
+
+      if (el) el.value = '';
+      if (Store[storeKey]) Store[storeKey] = '';
+
+      if (value || storeValue) {
+        if (storeKey === 'opTaskIdSearch') shouldRenderOp = true;
+        if (storeKey === 'atdOpTaskIdSearch') shouldRenderAtd = true;
+      }
+    });
+
+    if (shouldRenderOp && Store.currentPage !== 'atendimento') this.renderKanban();
+    if (shouldRenderAtd && Store.currentPage === 'atendimento') this.renderAtendimentoPage();
+  },
+
+  scheduleTaskIdAutofillCleanup() {
+    this.clearTaskIdAutofillFilters({ force: true });
+    [80, 350, 900].forEach((delay) => {
+      window.setTimeout(() => this.clearTaskIdAutofillFilters(), delay);
+    });
   },
 
   /* ── Full dashboard render ─────────────────────────────── */
@@ -4330,8 +3596,7 @@ const UI = {
         OpTaskService.changeStatus(id, toStatus);
         UI.refreshOperationalUi();
         setTimeout(() => { this._lastMovedOpTask = null; }, 520);
-        UI.renderCalendarPage();
-        ToastService.show(`Lista movida para "${toStatus}"`, 'success');
+              ToastService.show(`Lista movida para "${toStatus}"`, 'success');
         return;
       }
 
@@ -4404,8 +3669,7 @@ const UI = {
         OpTaskService.changeStatus(draggedId, targetStatus);
         UI.refreshOperationalUi();
         setTimeout(() => { this._lastMovedOpTask = null; }, 520);
-        UI.renderCalendarPage();
-        ToastService.show(`Lista movida para "${targetStatus}"`, 'success');
+              ToastService.show(`Lista movida para "${targetStatus}"`, 'success');
       });
     });
   },
@@ -4652,7 +3916,7 @@ const UI = {
                   <button type="button" class="atn2-filter-btn" data-atn2-act-filter="progress" role="tab" aria-selected="false">Em andamento</button>
                   <button type="button" class="atn2-filter-btn" data-atn2-act-filter="done" role="tab" aria-selected="false">Concluídas</button>
                 </div>
-                <button class="atn2-primary atn2-primary--sm" id="atn2CreateActivityBtn" type="button">+ Criar atividade</button>
+                <button class="primary-btn atn2-primary atn2-primary--sm" id="atn2CreateActivityBtn" type="button">+ Criar atividade</button>
               </div>
             </div>
             <div class="atn2-side-body" id="atn2AttenuationActivities"></div>
@@ -4754,17 +4018,30 @@ const UI = {
   _atn2RenderAttenuationActivities(root, acts) {
     if (!root) return;
     if (!acts.length) {
-      root.innerHTML = `<div class="calendar-empty" style="padding:14px 10px;margin:0">Sem atividades de atenuação no momento.</div>`;
+      root.innerHTML = `<div class="empty-state" style="padding:14px 10px;margin:0">Sem atividades de atenuação no momento.</div>`;
       return;
     }
     const dot = (c) => this._atn2LaneDotColor(c === 'red' ? 'red' : c === 'amber' ? 'amber' : c === 'blue' ? 'blue' : 'green');
+    const statusClass = (status) => {
+      const s = String(status || '').toLowerCase();
+      if (s.includes('andamento')) return 'is-progress';
+      if (s.includes('conclu')) return 'is-done';
+      return 'is-created';
+    };
     root.innerHTML = acts.map(a => `
-      <div class="atn2-act-row" role="group" aria-label="Atividade de atenuação">
+      <div class="atn2-act-row" role="group" aria-label="Atividade de atenuação" style="--atn2-act-accent:${dot(a.color)}">
         <button type="button" class="atn2-act-open" data-atn2-act-open="${Number(a.id) || 0}" aria-label="Editar atividade">
-          <span class="atn2-dot" style="background:${dot(a.color)}" aria-hidden="true"></span>
+          <span class="atn2-act-led" aria-hidden="true"></span>
           <span class="atn2-act-main">
-            <span class="atn2-act-title">${this._atn2Escape(a.text)}</span>
-            <span class="atn2-act-sub">${this._atn2Escape(a.time)} · ${this._atn2Escape(a.tech)}${a.meta ? ` · ${this._atn2Escape(a.meta)}` : ''}</span>
+            <span class="atn2-act-title-row">
+              <span class="atn2-act-title">${this._atn2Escape(a.title || a.text)}</span>
+              <span class="atn2-act-status ${statusClass(a.status)}">${this._atn2Escape(a.status || 'Criada')}</span>
+            </span>
+            <span class="atn2-act-sub">
+              <span>${this._atn2Escape(a.time)}</span>
+              <span>${this._atn2Escape(a.tech)}</span>
+              ${a.meta ? `<span class="atn2-act-dbm">${this._atn2Escape(a.meta)}</span>` : ''}
+            </span>
           </span>
           <span class="atn2-act-cta" aria-hidden="true">
             <span class="atn2-act-cta-arrow">›</span>
@@ -4842,6 +4119,8 @@ const UI = {
       feed.push({
         color: prioColor(t),
         id: Number(t?.id) || 0,
+        title,
+        status: stt,
         text: `${title} — ${stt}`,
         time,
         tech: who,
@@ -4937,67 +4216,26 @@ const UI = {
     const prevRegion = prevModalOpen ? String(document.getElementById('atn2ActRegion')?.value || '') : '';
     const prevDbm = prevModalOpen ? String(document.getElementById('atn2ActDbm')?.value || '') : '';
 
-    // Seed leve para teste do termômetro (não duplica; só quando vazio)
+    // Remove dados de demonstração antigos que já podem ter sido gravados no localStorage/servidor.
     try {
-      const seedKey = 'planner.atn2.seeded.v1';
-      const hasSeeded = localStorage.getItem(seedKey) === '1';
-      const existing =
-        (Store.getOpTasksByCategory('correcao-atenuacao') || []).length +
-        (Store.getOpTasksByCategory('correcao_atenuacao') || []).length;
-      if (!hasSeeded && existing === 0) {
-        const samples = [
-          { titulo: 'CTO-01', regiao: 'Goval', responsavel: 'Junin', atenuacaoDb: -22.5 },
-          { titulo: 'CTO-02', regiao: 'Vale do Aço', responsavel: 'Marcos', atenuacaoDb: -24.5 },
-          { titulo: 'CTO-03', regiao: 'Caratinga', responsavel: 'Leandro', atenuacaoDb: -26.8 },
-          { titulo: 'CTO-04', regiao: 'Backup', responsavel: 'Junin', atenuacaoDb: -29.2 },
-        ];
-        samples.forEach((s) => {
-          const db = Number(s.atenuacaoDb);
-          const atenuacaoDb = Number.isFinite(db) ? (db > 0 ? -db : db) : 0;
-          const prio = this._atn2PriorityFromDbm(atenuacaoDb);
-          Store.addOpTask({
-            categoria: 'correcao-atenuacao',
-            titulo: `${s.titulo} · ${s.regiao}`,
-            regiao: s.regiao,
-            responsavel: s.responsavel,
-            prioridade: prio,
-            status: 'Criada',
-            descricao: `Atenuação: ${atenuacaoDb} dBm`,
-            atenuacaoDb,
-          });
-        });
-        localStorage.setItem(seedKey, '1');
-      }
-    } catch {
-      /* ignore */
-    }
-
-    // Adiciona 2 atividades extras (uma vez) para visualização do card "Atividades de atenuação".
-    // Não depende do seed inicial (pode rodar mesmo com dados já existentes).
-    try {
-      const extraKey = 'planner.atn2.extraActivities2.v1';
-      const hasExtra = localStorage.getItem(extraKey) === '1';
-      if (!hasExtra) {
-        const samples2 = [
-          { titulo: 'CTO-05', regiao: 'Goval', responsavel: 'Junin', atenuacaoDb: -25.6 },
-          { titulo: 'CTO-06', regiao: 'Vale do Aço', responsavel: 'Marcos', atenuacaoDb: -28.6 },
-        ];
-        samples2.forEach((s) => {
-          const db = Number(s.atenuacaoDb);
-          const atenuacaoDb = Number.isFinite(db) ? (db > 0 ? -db : db) : 0;
-          const prio = this._atn2PriorityFromDbm(atenuacaoDb);
-          Store.addOpTask({
-            categoria: 'correcao-atenuacao',
-            titulo: `${s.titulo} · ${s.regiao}`,
-            regiao: s.regiao,
-            responsavel: s.responsavel,
-            prioridade: prio,
-            status: 'Criada',
-            descricao: `Atenuação: ${atenuacaoDb} dBm`,
-            atenuacaoDb,
-          });
-        });
-        localStorage.setItem(extraKey, '1');
+      const sampleTitles = new Set([
+        'cto-01 · goval',
+        'cto-02 · vale do aço',
+        'cto-03 · caratinga',
+        'cto-04 · backup',
+        'cto-05 · goval',
+        'cto-06 · vale do aço',
+      ]);
+      const sampleTasks = [
+        ...(Store.getOpTasksByCategory('correcao-atenuacao') || []),
+        ...(Store.getOpTasksByCategory('correcao_atenuacao') || []),
+      ].filter((task) => {
+        const title = String(task?.titulo || '').trim().toLowerCase();
+        const description = String(task?.descricao || '').trim().toLowerCase();
+        return sampleTitles.has(title) && description.startsWith('atenuação:');
+      });
+      for (const task of sampleTasks) {
+        if (task?.id) Store.removeOpTask(Number(task.id), { cascade: true });
       }
     } catch {
       /* ignore */
@@ -5955,13 +5193,13 @@ const UI = {
 
     createdList.innerHTML = createdSorted.length
       ? createdSorted.map(renderCard).join('')
-      : `<div class="calendar-empty" style="padding:14px 10px;margin:0;">Sem itens criados no momento.</div>`;
+      : `<div class="empty-state" style="padding:14px 10px;margin:0;">Sem itens criados no momento.</div>`;
 
     const col = (key, title, hint, cls) => {
       const list = buckets[key] || [];
       const cards = list.length
         ? list.map((t) => renderCard(t)).join('')
-        : `<div class="calendar-empty" style="padding:18px 10px;margin:0;">Sem itens nesta fila.</div>`;
+        : `<div class="empty-state" style="padding:18px 10px;margin:0;">Sem itens nesta fila.</div>`;
 
       const collapseKey = `atn:${key}`;
       const colCollapsed = this._isKanbanCollapsedKey(collapseKey);
@@ -6216,7 +5454,7 @@ const TrocaEtiquetaPage = (() => {
                 <button type="button" class="te2__chip" data-te2-tech="prompt">Filtrar técnico…</button>
               </div>
             </div>
-            <button type="button" class="te2__primary" data-te2-action="new">+ Nova ordem</button>
+            <button type="button" class="primary-btn te2__primary" data-te2-action="new">+ Nova ordem</button>
           </div>
         </header>
 
@@ -7126,6 +6364,7 @@ const Controllers = {
       this._unlock();
       this._syncSidebarUser();
       queueMicrotask(() => {
+        UI.scheduleTaskIdAutofillCleanup?.();
         ChatMentionNotifs.syncBellUi();
         UI.restoreLastPageIfAuthed?.();
         if (Controllers.auth._isAuthenticated() && Store.currentPage !== 'chat') {
@@ -7210,6 +6449,7 @@ const Controllers = {
         this._finishLogin('Usuário', 'usuario');
       } else {
         this._unlock();
+        UI.scheduleTaskIdAutofillCleanup?.();
       }
       this._syncSidebarUser();
 
@@ -7445,8 +6685,7 @@ const Controllers = {
 
       ModalService.close('taskModal');
       UI.renderDashboard();
-      UI.renderCalendarPage();
-    },
+        },
 
     toggleDone(id, source = 'dashboard') {
       if (source === 'operacional') {
@@ -7463,8 +6702,7 @@ const Controllers = {
         Store.updateTask(id, { status: wasDone ? 'Pendente' : 'Concluída' });
       }
       UI.renderDashboard();
-      UI.renderCalendarPage();
-    },
+        },
 
     init() {
       document.getElementById('openTaskModalBtn')?.addEventListener('click', () => this.openNewModal());
@@ -8897,8 +8135,7 @@ const Controllers = {
       ModalService.close('opTaskModal');
       UI.refreshOperationalUi();
       UI.renderDashboard();
-      UI.renderCalendarPage();
-    },
+        },
 
     save() {
       const data = this._validate();
@@ -8939,8 +8176,7 @@ const Controllers = {
       }
 
       UI.refreshOperationalUi();
-      UI.renderCalendarPage();
-    },
+        },
 
     init() {
       this._syncTecnicosDatalist();
@@ -9017,8 +8253,7 @@ const Controllers = {
           OpTaskService.changeStatus(tid, nextStatus);
           UI.refreshOperationalUi();
           UI.renderDashboard();
-          UI.renderCalendarPage();
-          setTimeout(() => { UI._lastMovedOpTask = null; }, 520);
+                  setTimeout(() => { UI._lastMovedOpTask = null; }, 520);
           Controllers.opTask._refreshAtdChildrenList();
           Controllers.opTask._closeGlobalStatusPicker();
           ToastService.show(`Status: ${nextStatus}`, 'success');
@@ -9071,8 +8306,7 @@ const Controllers = {
             if (!nextStatus) return;
             OpTaskService.changeStatus(id, nextStatus);
             this._refreshAtdChildrenList();
-            UI.renderCalendarPage();
-            UI.refreshOperationalUi();
+                      UI.refreshOperationalUi();
             closeDropdown();
           });
         });
@@ -9249,118 +8483,7 @@ const Controllers = {
     },
   },
 
-  /* ── Calendar ─────────────────────────────────────────── */
-  calendar: {
-    _editingNoteId: null,
-    _openNoteModal(prefillDate) {
-      this._editingNoteId = null;
-      const idHidden = document.getElementById('cal-note-id');
-      if (idHidden) idHidden.value = '';
-      const delBtn = document.getElementById('deleteCalendarNoteBtn');
-      if (delBtn) delBtn.style.display = 'none';
-      document.getElementById('calendarNoteModalTitle').textContent = 'Nova anotação';
-      document.getElementById('cal-note-date').value = prefillDate || CalendarService.selectedDateIso;
-      document.getElementById('cal-note-title').value = '';
-      document.getElementById('cal-note-desc').value = '';
-      document.getElementById('cal-note-priority').value = 'Média';
-      ModalService.open('calendarNoteModal');
-    },
-
-    _openEditNoteModal(noteId) {
-      const n = Store.findCalendarNote?.(noteId);
-      if (!n) return;
-      this._editingNoteId = Number(noteId) || null;
-      const idHidden = document.getElementById('cal-note-id');
-      if (idHidden) idHidden.value = String(noteId);
-      const delBtn = document.getElementById('deleteCalendarNoteBtn');
-      if (delBtn) delBtn.style.display = '';
-      document.getElementById('calendarNoteModalTitle').textContent = 'Editar anotação';
-      document.getElementById('cal-note-date').value = String(n.date || CalendarService.selectedDateIso || Utils.todayIso()).slice(0, 10);
-      document.getElementById('cal-note-title').value = String(n.title || '').trim();
-      document.getElementById('cal-note-desc').value = String(n.description || '').trim();
-      document.getElementById('cal-note-priority').value = String(n.priority || 'Média');
-      ModalService.open('calendarNoteModal');
-    },
-
-    _saveNote() {
-      let date = document.getElementById('cal-note-date').value;
-      let title = document.getElementById('cal-note-title').value.trim();
-      const description = document.getElementById('cal-note-desc').value.trim();
-      const priority = document.getElementById('cal-note-priority').value;
-
-      if (!date) date = CalendarService.selectedDateIso || Utils.todayIso();
-      if (!title) title = 'Anotação';
-
-      const editingId = Number(document.getElementById('cal-note-id')?.value || 0) || this._editingNoteId;
-      if (editingId) CalendarService.updateNote(editingId, { date, title, description, priority });
-      else CalendarService.createNote({ date, title, description, priority });
-      CalendarService.selectedDateIso = date;
-      ModalService.close('calendarNoteModal');
-      UI.renderAgenda();
-      UI.renderCalendarPage();
-      ToastService.show('Anotação salva no calendário', 'success');
-    },
-
-    init() {
-      // Calendário v3 (calendar.js): binds/CRUD ficam no módulo.
-      if (document.getElementById('cal-app')) {
-        // Inicializa quando o script estiver carregado (loader no index.html carrega após main.js).
-        queueMicrotask(() => window.CalendarApp?.init?.());
-        return;
-      }
-
-      const grid = document.getElementById('calendarGrid');
-      const dayList = document.getElementById('calendarDayList');
-      if (!grid || !dayList) return;
-
-      document.getElementById('calendarPrevBtn').addEventListener('click', () => {
-        const d = CalendarService.currentMonthDate;
-        CalendarService.currentMonthDate = new Date(d.getFullYear(), d.getMonth() - 1, 1);
-        UI.renderCalendarPage();
-      });
-
-      document.getElementById('calendarNextBtn').addEventListener('click', () => {
-        const d = CalendarService.currentMonthDate;
-        CalendarService.currentMonthDate = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-        UI.renderCalendarPage();
-      });
-
-      document.getElementById('calendarTodayBtn').addEventListener('click', () => {
-        const now = new Date();
-        CalendarService.currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        CalendarService.selectedDateIso = Utils.todayIso();
-        UI.renderCalendarPage();
-      });
-
-      grid.addEventListener('click', e => {
-        const btn = e.target.closest('[data-date]');
-        if (!btn) return;
-        CalendarService.selectedDateIso = btn.dataset.date;
-        UI.renderCalendarPage();
-      });
-
-      dayList.addEventListener('click', e => {
-        const removeBtn = e.target.closest('[data-remove-note]');
-        if (!removeBtn) return;
-        CalendarService.removeNote(+removeBtn.dataset.removeNote);
-        UI.renderAgenda();
-        UI.renderCalendarPage();
-        ToastService.show('Anotação removida', 'info');
-      });
-
-      document.getElementById('calendarAddNoteBtn').addEventListener('click', () => {
-        this._openNoteModal(CalendarService.selectedDateIso);
-      });
-
-      document.getElementById('saveCalendarNoteBtn').addEventListener('click', () => this._saveNote());
-      ['closeCalendarNoteModal', 'cancelCalendarNoteModal'].forEach(id => {
-        document.getElementById(id)?.addEventListener('click', () => ModalService.close('calendarNoteModal'));
-      });
-    },
-  },
-
-  /* ── Webhook ──────────────────────────────────────────── */
-  webhook: {
+    webhook: {
     _lastAllSystemsOk: null,
 
     _syncSystemPill() {
@@ -10184,7 +9307,6 @@ async function initApp() {
   Controllers.filters.init();
   Controllers.categoryTabs.init();
   Controllers.opFolders.init();
-  Controllers.calendar.init();
   Controllers.webhook.init();
   Controllers.notes.init();
   Controllers.teamChat.init();
@@ -10197,12 +9319,10 @@ async function initApp() {
     const p = Store.currentPage;
     if (p === 'dashboard') UI.renderDashboard();
     else if (p === 'tarefas' || p === 'atendimento') UI.refreshOperationalUi();
-    else if (p === 'calendario') UI.renderCalendarPage();
   });
 
   UI.renderAgenda();
   UI.renderDashboard();
-  UI.renderCalendarPage();
 
   // Clock
   UI.updateClock();
@@ -10217,11 +9337,10 @@ async function initApp() {
     if (!payload || typeof payload !== 'object') return '';
     const t = Number(payload.tasks) || 0;
     const o = Number(payload.opTasks) || 0;
-    const c = Number(payload.calendarNotes) || 0;
     const g = Number(payload.config) || 0;
     const n = Number(payload.notifications) || 0;
     const a = Number(payload.activity) || 0;
-    return `${t}|${o}|${c}|${g}|${n}|${a}`;
+    return `${t}|${o}|${g}|${n}|${a}`;
   };
   let syncInFlight = false;
   const quickSyncTick = async () => {
@@ -10238,8 +9357,7 @@ async function initApp() {
         void seedRemoteSigIfPossible();
         UI.renderDashboard();
         UI.refreshOperationalUi();
-        UI.renderCalendarPage();
-        return;
+              return;
       }
 
       // Usa o maior updated_at das tabelas (mais confiável que serverTime para não perder updates no mesmo segundo).
@@ -10261,8 +9379,7 @@ async function initApp() {
       if (changedCount) {
         UI.renderDashboard();
         UI.refreshOperationalUi();
-        UI.renderCalendarPage();
-      }
+            }
       if (changedNotifs.length) {
         ChatMentionNotifs.processIncomingTaskNotifications(changedNotifs);
       }
@@ -10271,15 +9388,14 @@ async function initApp() {
         window.PlannerDashboard?._renderActivityFeedFromStore?.();
       }
 
-      // Se o servidor acusar mudanca mas nao vier diff (ex.: config/calendario),
+      // Se o servidor acusar mudanca mas nao vier diff (ex.: config),
       // faz bootstrap completo como fallback.
       if (sigChanged && !changedTasks.length && !changedOp.length) {
         const updated = await bootstrapWithTimeout(15000);
         if (!updated) return;
         UI.renderDashboard();
         UI.refreshOperationalUi();
-        UI.renderCalendarPage();
-      }
+            }
     } finally {
       syncInFlight = false;
     }
@@ -10304,8 +9420,7 @@ async function initApp() {
     void seedRemoteSigIfPossible();
     UI.renderDashboard();
     UI.refreshOperationalUi();
-    UI.renderCalendarPage();
-  }, 25000);
+    }, 25000);
 
   void seedRemoteSigIfPossible();
 
@@ -10329,8 +9444,7 @@ async function initApp() {
         void seedRemoteSigIfPossible();
         UI.renderDashboard();
         UI.refreshOperationalUi();
-        UI.renderCalendarPage();
-        ToastService.show('Dados atualizados', 'success');
+              ToastService.show('Dados atualizados', 'success');
       } else {
         ToastService.show('Sem conexão com a API', 'error');
       }
@@ -10343,7 +9457,6 @@ async function initApp() {
   document.getElementById('refreshBtn')?.addEventListener('click', () => manualRefresh('refreshBtn'));
   document.getElementById('refreshOpBtn')?.addEventListener('click', () => manualRefresh('refreshOpBtn'));
   document.getElementById('refreshAtdBtn')?.addEventListener('click', () => manualRefresh('refreshAtdBtn'));
-  document.getElementById('refreshCalendarBtn')?.addEventListener('click', () => manualRefresh('refreshCalendarBtn'));
 
   UI.restoreLastPageIfAuthed();
   if (Controllers.auth._isAuthenticated() && Store.currentPage !== 'chat') {

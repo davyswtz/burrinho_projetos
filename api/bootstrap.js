@@ -10,7 +10,6 @@ export default async function handler(req, res) {
       ok: true,
       tasks: data.tasks || [],
       opTasks: data.opTasks || [],
-      calendarNotes: data.calendarNotes || [],
       webhookConfig: data.webhookConfig || { url: '', events: { andamento: true, concluida: true, finalizada: true } },
       plannerConfig: data.plannerConfig || { note: '' },
     });

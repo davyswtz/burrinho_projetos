@@ -21,9 +21,6 @@ try {
       assinada_por AS assinadaPor, assinada_em AS assinadaEm
       FROM op_tasks ORDER BY id ASC';
     $opTasks = $pdo->query($opSql)->fetchAll();
-    $calendarNotes = $pdo->query(
-        'SELECT id, `date`, title, description, priority, createdAt FROM calendar_notes ORDER BY id ASC'
-    )->fetchAll();
     $cfgRows = $pdo->query('SELECT cfg_key, cfg_value FROM app_config')->fetchAll();
     $notifs = $pdo
         ->query('SELECT id, kind, title, message, ref_type, ref_id, op_category AS opCategory, created_by AS createdBy, created_at AS createdAt
@@ -52,7 +49,6 @@ try {
         'ok' => true,
         'tasks' => $tasks,
         'opTasks' => $opTasks,
-        'calendarNotes' => $calendarNotes,
         'notifications' => array_reverse($notifs ?: []),
         'activity' => array_reverse($activity ?: []),
         'webhookConfig' => $cfgMap['webhookConfig'] ?? ['url' => '', 'events' => ['andamento' => true, 'concluida' => true, 'finalizada' => true]],

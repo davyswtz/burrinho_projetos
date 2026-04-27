@@ -1,4 +1,4 @@
-Arquivos .js nesta pasta (config.js, bootstrap.js, tasks.js, op-tasks.js, calendar-notes.js, _store.js)
+Arquivos .js nesta pasta (config.js, bootstrap.js, tasks.js, op-tasks.js, _store.js)
 não fazem parte do deploy PHP na HostGator — o painel usa apenas os .php.
 
 No servidor compartilhado envie apenas os .php, .htaccess, SQL de apoio e credentials.php.

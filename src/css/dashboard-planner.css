@@ -230,36 +230,29 @@ body.planner-dash-mode .sidebar-footer {
 body.planner-dash-mode .sidebar-footer .user-pill {
   flex: 1;
   min-width: 0;
-  border-radius: var(--pl-radius-lg);
-  padding: 8px 10px;
-  background: transparent;
-  border: 0.5px solid var(--pl-border);
+  border-radius: 16px;
+  padding: 9px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.018) 48%, rgba(0,0,0,.12)),
+    color-mix(in srgb, var(--pl-elev) 54%, transparent);
+  border: 0.5px solid color-mix(in srgb, var(--pl-border) 72%, transparent);
 }
 
-body.planner-dash-mode .sidebar-footer #logoutBtn {
-  flex-shrink: 0;
-  margin: 0;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--pl-radius-sm);
-  border: 0.5px solid var(--pl-border);
-  color: var(--pl-text-2);
+body.planner-dash-mode .sidebar-footer .user-pill:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 42%, var(--pl-border));
 }
 
-body.planner-dash-mode .sidebar-footer #logoutBtn .nav-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+body.planner-dash-mode .sidebar-footer .user-avatar {
+  color: color-mix(in srgb, var(--color-accent) 86%, white);
+  border-color: color-mix(in srgb, var(--color-accent) 34%, transparent);
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255,255,255,.18), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 24%, transparent), rgba(255,255,255,.035));
+}
+
+body.planner-dash-mode .sidebar-footer .user-status-dot,
+body.planner-dash-mode .sidebar-footer .user-role::before {
+  background: var(--color-accent);
 }
 
 body.planner-dash-mode .avatar-main {
@@ -369,10 +362,11 @@ body.planner-dash-mode .planner-period-select {
   letter-spacing: 0;
   text-transform: none;
   color: var(--pl-text);
-  background: var(--pl-surface);
+  height: 36px;
+  background: color-mix(in srgb, var(--pl-elev) 72%, transparent);
   border: 0.5px solid var(--pl-border);
-  border-radius: var(--pl-radius-sm);
-  padding: 8px 28px 8px 10px;
+  border-radius: 10px;
+  padding: 0 28px 0 10px;
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -412,11 +406,13 @@ body.planner-dash-mode .planner-status-pill.planner-status-pill--danger .planner
 }
 
 body.planner-dash-mode .icon-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--pl-radius-sm);
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 10px;
   border: 0.5px solid var(--pl-border);
-  background: var(--pl-surface);
+  background: color-mix(in srgb, var(--pl-elev) 72%, transparent);
   color: var(--pl-text-2);
 }
 
@@ -433,9 +429,21 @@ body.planner-dash-mode .topbar-notif-badge {
 /* ─── Dashboard page ─── */
 .planner-dash {
   --pd-pad: 24px;
+  width: 100%;
   padding: var(--pd-pad);
-  max-width: 1600px;
+  max-width: 1760px;
   margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  body.planner-dash-mode #page-dashboard.planner-page {
+    width: calc(100% + var(--pad-x));
+    margin-inline: calc(-0.5 * var(--pad-x));
+  }
+
+  .planner-dash {
+    --pd-pad: 14px;
+  }
 }
 
 .planner-dash-toolbar {
@@ -444,26 +452,33 @@ body.planner-dash-mode .topbar-notif-badge {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 20px;
+  min-height: 58px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 0.5px solid color-mix(in srgb, var(--pl-border) 78%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012)),
+    color-mix(in srgb, var(--pl-surface) 86%, transparent);
 }
 
 .planner-dash-search {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1 1 640px;
-  min-width: min(640px, 100%);
-  max-width: 980px;
-  padding: 0 14px;
-  height: 44px;
-  border-radius: var(--pl-radius-sm, 8px);
+  gap: 8px;
+  flex: 1 1 280px;
+  min-width: min(280px, 100%);
+  max-width: 560px;
+  padding: 0 11px;
+  height: 36px;
+  border-radius: 10px;
   border: 0.5px solid var(--pl-border);
-  background: var(--pl-surface);
+  background: color-mix(in srgb, var(--pl-elev) 72%, transparent);
 }
 
 body.planner-dash-mode .planner-dash-search {
-  border-color: var(--pl-border);
-  background: var(--pl-surface);
+  border-color: color-mix(in srgb, var(--pl-border) 82%, transparent);
+  background: color-mix(in srgb, var(--pl-elev) 72%, transparent);
 }
 
 .planner-dash-search svg {

@@ -58,7 +58,6 @@ public_html/
     ├── tasks.php
     ├── op_tasks.php
     ├── op_task_image.php
-    ├── calendar_notes.php
     ├── chat.php
     └── op_desc_images.inc.php
     └── migrations/            ← opcional

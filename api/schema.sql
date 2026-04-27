@@ -67,34 +67,6 @@ CREATE TABLE IF NOT EXISTS op_task_image (
   CONSTRAINT fk_op_task_image_op_task FOREIGN KEY (op_task_id) REFERENCES op_tasks (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── Notas do calendário ───────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS calendar_notes (
-  id INT NOT NULL,
-  `date` DATE NOT NULL,
-  title VARCHAR(255) NOT NULL,
-  description TEXT,
-  priority VARCHAR(24) NOT NULL DEFAULT 'Média',
-  createdAt VARCHAR(64) NOT NULL DEFAULT '',
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_cal_notes_date (`date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ─── Eventos do calendário (CRUD completo) ─────────────────────────────────
-CREATE TABLE IF NOT EXISTS eventos (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  titulo VARCHAR(255) NOT NULL,
-  descricao TEXT,
-  data_inicio DATETIME NOT NULL,
-  data_fim DATETIME NULL,
-  categoria VARCHAR(32) NOT NULL DEFAULT 'Em andamento',
-  criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_eventos_inicio (data_inicio),
-  KEY idx_eventos_categoria (categoria)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- ─── Configuração (webhook Google Chat, nota do planner) ───────────────────
 CREATE TABLE IF NOT EXISTS app_config (
   cfg_key VARCHAR(64) NOT NULL,
