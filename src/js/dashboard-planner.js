@@ -410,19 +410,31 @@
         if (!document.querySelector('link[data-planner-leaflet-css]')) {
           const link = document.createElement('link');
           link.rel = 'stylesheet';
-          link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+          link.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
           link.dataset.plannerLeafletCss = '1';
           document.head.appendChild(link);
         }
-        const script = document.createElement('script');
-        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        script.async = true;
-        script.onload = () => resolve(window.L);
-        script.onerror = () => {
-          this._leafletLoadPromise = null;
-          reject(new Error('leaflet_load_failed'));
+        const urls = [
+          'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
+          'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+        ];
+        let idx = 0;
+        const loadNext = () => {
+          const script = document.createElement('script');
+          script.src = urls[idx++];
+          script.async = true;
+          script.onload = () => resolve(window.L);
+          script.onerror = () => {
+            if (idx < urls.length) {
+              loadNext();
+              return;
+            }
+            this._leafletLoadPromise = null;
+            reject(new Error('leaflet_load_failed'));
+          };
+          document.head.appendChild(script);
         };
-        document.head.appendChild(script);
+        loadNext();
       });
       return this._leafletLoadPromise;
     },
@@ -657,34 +669,40 @@
         return Boolean(prazo && prazo < today && !done.has(status));
       };
       const isOpen = (t) => !done.has(String(t?.effectiveStatus || t?.status || '').trim());
+      const isRompimentoCountStatus = (t) => {
+        const status = String(t?.effectiveStatus || t?.status || '').trim();
+        return ['Em andamento', 'Concluída', 'Finalizada', 'Finalizado'].includes(status);
+      };
 
-      const filtered = TaskService.getFilteredTasks()
-        .filter(t => String(t?.source || '') === 'operacional');
-      const heatPoints = this._rompimentoHeatPoints(filtered, today, done);
+      const allOpTasks = (typeof Store !== 'undefined' && Store.getOpTasks) ? Store.getOpTasks() : [];
+      const rompimentosForTotals = allOpTasks.filter(t =>
+        String(t?.categoria || '').trim() === 'rompimentos' &&
+        isRompimentoCountStatus(t),
+      );
+      const heatPoints = this._rompimentoHeatPoints(rompimentosForTotals, today, done);
       const selectedRegion = String(this._heatSelectedRegion || '').trim();
       const heatPointsForMap = selectedRegion
         ? heatPoints.filter(p => normalizeRegion(p.regiao) === selectedRegion)
         : heatPoints;
       const map = new Map();
-      filtered.forEach((t) => {
+      rompimentosForTotals.forEach((t) => {
         const regiao = normalizeRegion(t?.regiao);
         if (!map.has(regiao)) {
-          map.set(regiao, { nome: regiao, total: 0, abertas: 0, atrasadas: 0, rompimentos: 0, rompAbertos: 0, rompAtrasados: 0 });
+          map.set(regiao, { nome: regiao, total: 0, abertas: 0, atrasadas: 0, rompimentos: 0, rompAbertos: 0, rompAtrasados: 0, rompConcluidos: 0 });
         }
         const row = map.get(regiao);
-        const isRompimento = String(t?.categoria || '').trim() === 'rompimentos';
+        const status = String(t?.effectiveStatus || t?.status || '').trim();
         row.total += 1;
         if (isOpen(t)) row.abertas += 1;
         if (isLate(t)) row.atrasadas += 1;
-        if (isRompimento) {
-          row.rompimentos += 1;
-          if (isOpen(t)) row.rompAbertos += 1;
-          if (isLate(t)) row.rompAtrasados += 1;
-        }
+        row.rompimentos += 1;
+        if (status === 'Em andamento') row.rompAbertos += 1;
+        if (['Concluída', 'Finalizada', 'Finalizado'].includes(status)) row.rompConcluidos += 1;
+        if (isLate(t)) row.rompAtrasados += 1;
       });
 
       ['Goval', 'Vale do Aço', 'Caratinga', 'Backup'].forEach((nome) => {
-        if (!map.has(nome)) map.set(nome, { nome, total: 0, abertas: 0, atrasadas: 0, rompimentos: 0, rompAbertos: 0, rompAtrasados: 0 });
+        if (!map.has(nome)) map.set(nome, { nome, total: 0, abertas: 0, atrasadas: 0, rompimentos: 0, rompAbertos: 0, rompAtrasados: 0, rompConcluidos: 0 });
       });
 
       const rows = [...map.values()]
@@ -707,7 +725,7 @@
         const level = row.rompimentos === 0 ? 0 : Math.max(1, Math.min(4, Math.ceil(intensity * 4)));
         const width = row.rompimentos === 0 ? 0 : Math.max(8, Math.round(intensity * 100));
         const meta = row.rompimentos
-          ? `${row.rompAbertos} abertos · ${row.rompAtrasados} atrasados · ${row.total} tarefas`
+          ? `${row.rompAbertos} em andamento · ${row.rompConcluidos} concluídos · ${row.rompAtrasados} atrasados`
           : 'Sem rompimentos no filtro';
         const isSelected = selectedRegion === row.nome;
         return `
@@ -738,12 +756,11 @@
     },
 
     _applyTeam() {
-      // Top técnicos por rompimentos resolvidos (op_tasks.categoria='rompimentos' e status final)
+      // Top técnicos por rompimentos na aba Finalizado (técnico atribuído em `responsavel`).
       const allOp = (typeof Store !== 'undefined' && Store.getOpTasks) ? Store.getOpTasks() : [];
-      const doneStatus = new Set(['Concluída', 'Finalizada', 'Finalizado']);
       const rompDone = allOp.filter(t =>
         String(t?.categoria || '').trim() === 'rompimentos' &&
-        doneStatus.has(String(t?.status || '').trim()),
+        String(t?.status || '').trim() === 'Finalizado',
       );
 
       const byTech = new Map(); // nome -> { count, regions: Map(region->count) }
