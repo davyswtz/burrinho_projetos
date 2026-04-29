@@ -159,7 +159,7 @@ try {
             ':assinada_em' => (string) ($data['assinadaEm'] ?? ''),
         ]);
 
-        $finalDesc = processOpTaskDescricaoImages($descricaoRaw, $id, $pdo);
+        $finalDesc = sanitizeOpTaskDescricaoHtml(processOpTaskDescricaoImages($descricaoRaw, $id, $pdo));
         pruneOpTaskImagesNotInHtml($pdo, $id, $finalDesc);
         if ($finalDesc !== $descricaoRaw) {
             $u = $pdo->prepare('UPDATE op_tasks SET descricao = :d WHERE id = :id');

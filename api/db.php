@@ -5,6 +5,14 @@ declare(strict_types=1);
  * Sessão compartilhada pelos endpoints da API.
  */
 if (session_status() === PHP_SESSION_NONE) {
+    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
 
@@ -68,6 +76,9 @@ function jsonResponse(array $payload, int $status = 200): void
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: SAMEORIGIN');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
     // HostGator/cPanel pode ter cache/proxy agressivo: nunca cachear respostas JSON da API.
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
     header('Pragma: no-cache');

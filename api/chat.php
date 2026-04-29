@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
  */
 try {
     $pdo = db();
+    requireAuth();
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $since = isset($_GET['since']) ? (int) $_GET['since'] : 0;
@@ -88,12 +89,11 @@ try {
         chatJsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
     }
 
-    requireAuth();
     requireSameOriginForMutation();
 
     $data = readJsonBody();
-    $userKey = strtolower(trim((string) ($data['userKey'] ?? '')));
-    $displayName = trim((string) ($data['displayName'] ?? ''));
+    $userKey = strtolower(trim((string) ($_SESSION['planner_user'] ?? '')));
+    $displayName = $userKey;
     $body = trim((string) ($data['body'] ?? ''));
 
     if ($userKey === '' || $body === '') {

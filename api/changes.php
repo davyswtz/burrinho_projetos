@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/db.php';
+require __DIR__ . '/op_desc_images.inc.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
     jsonResponse(['ok' => true]);
@@ -68,6 +69,7 @@ try {
         $stmtO->execute([':since' => $since]);
         $changedOpTasks = $stmtO->fetchAll() ?: [];
         foreach ($changedOpTasks as &$item) {
+            $item['descricao'] = sanitizeOpTaskDescricaoHtml((string) ($item['descricao'] ?? ''));
             $item['historico'] = json_decode((string) ($item['historico'] ?? '[]'), true) ?: [];
             $item['isParentTask'] = ((int) ($item['is_parent_task'] ?? 0)) === 1;
             $item['parentTaskId'] = isset($item['parent_task_id']) ? (int) $item['parent_task_id'] : null;

@@ -6478,7 +6478,7 @@ const Controllers = {
     },
   },
   auth: {
-    _sessionKey: 'planner.session.v1',
+    _sessionKey: 'planner.session.v2',
     _displayNameKey: 'planner.session.displayName.v1',
     _sessionUserKey: SESSION_USER_KEY,
     _getAllowedUsers() {
@@ -6589,9 +6589,8 @@ const Controllers = {
       ToastService.show('Sessão encerrada', 'info');
     },
     init() {
-      // Autenticação removida: sempre libera o app (sem senha).
       if (!this._isAuthenticated()) {
-        this._finishLogin('Usuário', 'usuario');
+        this._lock();
       } else {
         this._unlock();
         UI.scheduleTaskIdAutofillCleanup?.();

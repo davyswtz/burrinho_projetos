@@ -9,12 +9,12 @@
   Deny from all
 </Files>
 
-# Bloqueia exemplos e schema (não devem ficar acessíveis publicamente)
-<FilesMatch "(credentials\.example\.php|schema\.sql)">
+# Bloqueia exemplos, SQLs e endpoints temporários (não devem ficar acessíveis publicamente)
+<FilesMatch "(credentials\.example\.php|.*\.sql|debug_.*\.php|reset.*\.sql)">
   Require all denied
 </FilesMatch>
 
-<FilesMatch "(credentials\.example\.php|schema\.sql)">
+<FilesMatch "(credentials\.example\.php|.*\.sql|debug_.*\.php|reset.*\.sql)">
   Order allow,deny
   Deny from all
 </FilesMatch>

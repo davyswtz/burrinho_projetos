@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/db.php';
+require __DIR__ . '/op_desc_images.inc.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     jsonResponse(['ok' => true]);
@@ -12,7 +13,29 @@ try {
     }
 
     $pdo = db();
-    $tasks = $pdo->query('SELECT id, titulo, responsavel, prazo, status, prioridade FROM tasks ORDER BY id ASC')->fetchAll();
+    $tableExists = function (string $table) use ($pdo): bool {
+        $stmt = $pdo->prepare(
+            'SELECT 1
+               FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = :table
+              LIMIT 1'
+        );
+        $stmt->execute([':table' => $table]);
+        return (bool) $stmt->fetchColumn();
+    };
+    $safeFetchAll = function (string $sql, string $label) use ($pdo): array {
+        try {
+            return $pdo->query($sql)->fetchAll() ?: [];
+        } catch (Throwable $e) {
+            error_log('[bootstrap.php] ' . $label . ' failed: ' . $e->getMessage());
+            return [];
+        }
+    };
+
+    $tasks = $tableExists('tasks')
+        ? $safeFetchAll('SELECT id, titulo, responsavel, prazo, status, prioridade FROM tasks ORDER BY id ASC', 'tasks')
+        : [];
     $opSql = 'SELECT id, taskCode, titulo, setor, regiao, responsavel, clientesAfetados,
       coordenadas, localizacao_texto AS localizacaoTexto, descricao, categoria, prazo, prioridade, status,
       is_parent_task, parent_task_id, criadaEm, historico, chat_thread_key AS chatThreadKey,
@@ -20,18 +43,20 @@ try {
       data_instalacao AS dataInstalacao,
       assinada_por AS assinadaPor, assinada_em AS assinadaEm
       FROM op_tasks ORDER BY id ASC';
-    $opTasks = $pdo->query($opSql)->fetchAll();
-    $cfgRows = $pdo->query('SELECT cfg_key, cfg_value FROM app_config')->fetchAll();
-    $notifs = $pdo
-        ->query('SELECT id, kind, title, message, ref_type, ref_id, op_category AS opCategory, created_by AS createdBy, created_at AS createdAt
-                 FROM app_notification ORDER BY id DESC LIMIT 50')
-        ->fetchAll();
+    $opTasks = $tableExists('op_tasks') ? $safeFetchAll($opSql, 'op_tasks') : [];
+    $cfgRows = $tableExists('app_config')
+        ? $safeFetchAll('SELECT cfg_key, cfg_value FROM app_config', 'app_config')
+        : [];
+    $notifs = $tableExists('app_notification')
+        ? $safeFetchAll('SELECT id, kind, title, message, ref_type, ref_id, op_category AS opCategory, created_by AS createdBy, created_at AS createdAt
+                 FROM app_notification ORDER BY id DESC LIMIT 50', 'app_notification')
+        : [];
     // Feed global (todos os usuários)
-    $activity = $pdo
-        ->query('SELECT id, username, event_type AS eventType, severity, message, ref_type AS refType, ref_id AS refId,
+    $activity = $tableExists('app_activity_event')
+        ? $safeFetchAll('SELECT id, username, event_type AS eventType, severity, message, ref_type AS refType, ref_id AS refId,
           op_category AS opCategory, created_at AS createdAt
-          FROM app_activity_event ORDER BY id DESC LIMIT 30')
-        ->fetchAll() ?: [];
+          FROM app_activity_event ORDER BY id DESC LIMIT 30', 'app_activity_event')
+        : [];
 
     $cfgMap = [];
     foreach ($cfgRows as $row) {
@@ -39,6 +64,7 @@ try {
     }
 
     foreach ($opTasks as &$item) {
+        $item['descricao'] = sanitizeOpTaskDescricaoHtml((string) ($item['descricao'] ?? ''));
         $item['historico'] = json_decode((string) ($item['historico'] ?? '[]'), true) ?: [];
         $item['isParentTask'] = ((int) ($item['is_parent_task'] ?? 0)) === 1;
         $item['parentTaskId'] = isset($item['parent_task_id']) ? (int) $item['parent_task_id'] : null;

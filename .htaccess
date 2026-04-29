@@ -17,7 +17,7 @@ AddDefaultCharset utf-8
 </IfModule>
 
 # Não expor arquivos sensíveis por engano
-<FilesMatch "(^\.env$|credentials\.php$|credentials\.example\.php$|schema\.sql$|DEPLOY_HOSTGATOR\.txt$|NAO_SUBIR_JS_NA_HOSTGATOR\.txt$)">
+<FilesMatch "(^\.env$|credentials\.php$|credentials\.example\.php$|.*\.sql$|debug_.*\.php$|reset.*\.sql$|DEPLOY_HOSTGATOR\.txt$|NAO_SUBIR_JS_NA_HOSTGATOR\.txt$)">
   Require all denied
 </FilesMatch>
 

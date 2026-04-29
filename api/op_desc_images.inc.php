@@ -30,6 +30,19 @@ function processOpTaskDescricaoImages(string $html, int $opTaskId, PDO $pdo): st
                 $ext = 'jpeg';
             }
             $mime = 'image/' . $ext;
+            $info = @getimagesizefromstring($binary);
+            if (!is_array($info) || empty($info['mime']) || strtolower((string) $info['mime']) !== $mime) {
+                return '';
+            }
+
+            $usage = $pdo->prepare('SELECT COUNT(*) AS total_images, COALESCE(SUM(OCTET_LENGTH(image_data)), 0) AS total_bytes FROM op_task_image WHERE op_task_id = :task');
+            $usage->execute([':task' => $opTaskId]);
+            $current = $usage->fetch() ?: [];
+            $totalImages = (int) ($current['total_images'] ?? 0);
+            $totalBytes = (int) ($current['total_bytes'] ?? 0);
+            if ($totalImages >= 20 || ($totalBytes + strlen($binary)) > (40 * 1024 * 1024)) {
+                return '';
+            }
 
             $stmt = $pdo->prepare(
                 'INSERT INTO op_task_image (op_task_id, mime_type, image_data) VALUES (:task, :mime, :data)'
@@ -46,6 +59,106 @@ function processOpTaskDescricaoImages(string $html, int $opTaskId, PDO $pdo): st
         },
         $html
     );
+}
+
+/**
+ * Sanitiza o HTML rico salvo na descrição.
+ * Mantém apenas tags/atributos necessários para texto, links e imagens do próprio endpoint.
+ */
+function sanitizeOpTaskDescricaoHtml(string $html): string
+{
+    $html = trim($html);
+    if ($html === '') {
+        return '';
+    }
+
+    if (!class_exists('DOMDocument')) {
+        return strip_tags($html, '<p><br><b><strong><i><em><u><ul><ol><li><div><span><img><a>');
+    }
+
+    $allowedTags = [
+        'a' => ['href', 'title', 'target', 'rel'],
+        'b' => [],
+        'br' => [],
+        'div' => ['class'],
+        'em' => [],
+        'i' => [],
+        'img' => ['src', 'alt', 'title', 'data-op-img-id'],
+        'li' => [],
+        'ol' => [],
+        'p' => [],
+        'span' => ['class', 'data-op-img-id'],
+        'strong' => [],
+        'u' => [],
+        'ul' => [],
+    ];
+
+    $doc = new DOMDocument('1.0', 'UTF-8');
+    libxml_use_internal_errors(true);
+    $doc->loadHTML('<?xml encoding="UTF-8"><div id="__root">' . $html . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+    libxml_clear_errors();
+
+    $sanitizeNode = function (DOMNode $node) use (&$sanitizeNode, $allowedTags): void {
+        if ($node instanceof DOMElement) {
+            $tag = strtolower($node->tagName);
+            if ($tag === 'script' || $tag === 'style' || $tag === 'iframe' || $tag === 'object' || $tag === 'embed' || $tag === 'svg' || $tag === 'math') {
+                $node->parentNode?->removeChild($node);
+                return;
+            }
+
+            if (!array_key_exists($tag, $allowedTags) && $node->getAttribute('id') !== '__root') {
+                $text = $node->ownerDocument->createTextNode($node->textContent ?? '');
+                $node->parentNode?->replaceChild($text, $node);
+                return;
+            }
+
+            $allowedAttrs = $allowedTags[$tag] ?? [];
+            for ($i = $node->attributes->length - 1; $i >= 0; $i--) {
+                $attr = $node->attributes->item($i);
+                if (!$attr) {
+                    continue;
+                }
+                $name = strtolower($attr->name);
+                $value = trim($attr->value);
+                if (str_starts_with($name, 'on') || !in_array($name, $allowedAttrs, true)) {
+                    $node->removeAttribute($attr->name);
+                    continue;
+                }
+                if (($name === 'href' || $name === 'src') && preg_match('/^\s*javascript:/i', $value)) {
+                    $node->removeAttribute($attr->name);
+                    continue;
+                }
+                if ($tag === 'img' && $name === 'src' && !preg_match('#^(api/)?op_task_image\.php\?id=\d+$#i', $value)) {
+                    $node->removeAttribute($attr->name);
+                }
+                if ($tag === 'a' && $name === 'href' && !preg_match('#^https?://#i', $value)) {
+                    $node->removeAttribute($attr->name);
+                }
+            }
+
+            if ($tag === 'a' && $node->hasAttribute('href')) {
+                $node->setAttribute('target', '_blank');
+                $node->setAttribute('rel', 'noopener noreferrer');
+            }
+        }
+
+        foreach (iterator_to_array($node->childNodes) as $child) {
+            $sanitizeNode($child);
+        }
+    };
+
+    $root = $doc->getElementById('__root');
+    if (!$root) {
+        return '';
+    }
+    $sanitizeNode($root);
+
+    $out = '';
+    foreach ($root->childNodes as $child) {
+        $out .= $doc->saveHTML($child);
+    }
+
+    return trim($out);
 }
 
 /**

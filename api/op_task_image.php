@@ -7,6 +7,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
+    requireAuth();
+
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         jsonResponse(['ok' => false, 'error' => 'Method not allowed'], 405);
     }
