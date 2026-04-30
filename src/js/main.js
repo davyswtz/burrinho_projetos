@@ -3037,6 +3037,46 @@ const UI = {
   },
 
   /* ── Op Stats ───────────────────────────────────────────── */
+  /**
+   * Atualiza badges no menu lateral com a quantidade de itens "em andamento"
+   * (ou equivalentes de progresso) por página/categoria.
+   */
+  updateSidebarInProgressBadges() {
+    const opTasks = Store.getOpTasks();
+    const pageToCategory = {
+      'rompimentos': 'rompimentos',
+      'troca-poste': 'troca-poste',
+      'otimizacao-rede': 'otimizacao-rede',
+      'certificacao-cemig': 'certificacao-cemig',
+      'qualidade-potencia': 'qualidade-potencia',
+      'manutencao-corretiva': 'manutencao-corretiva',
+      'atendimento': 'atendimento-cliente',
+    };
+
+    const getBadgeEl = (page) => {
+      const btn = document.querySelector(`.nav-item[data-page="${page}"]`);
+      if (!btn) return null;
+      let badge = btn.querySelector('.nav-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'nav-badge';
+        badge.hidden = true;
+        badge.textContent = '0';
+        btn.appendChild(badge);
+      }
+      return badge;
+    };
+
+    Object.keys(pageToCategory).forEach((page) => {
+      const cat = pageToCategory[page];
+      const count = opTasks.filter(t => t.categoria === cat && TaskService._isProgressStatus(String(t.status || ''))).length;
+      const badge = getBadgeEl(page);
+      if (!badge) return;
+      badge.textContent = count > 99 ? '99+' : String(count);
+      badge.hidden = count <= 0;
+    });
+  },
+
   renderOpStats() {
     const category = Store.currentOpCategory;
     const counts = OpTaskService.getStatusCounts(category);
@@ -3058,6 +3098,9 @@ const UI = {
     if (tabTrocaPoste) tabTrocaPoste.textContent = String(trocaPosteCount);
     if (tabOtim) tabOtim.textContent = String(otimizacaoCount);
     if (tabCertCemig) tabCertCemig.textContent = String(certCemigCount);
+
+    // Badge lateral: somente itens em andamento por página/categoria.
+    this.updateSidebarInProgressBadges();
   },
 
   /* ── Kanban Board ───────────────────────────────────────── */
@@ -3832,6 +3875,8 @@ const UI = {
       this.renderAtenuacaoDashboardPage();
     }
     else this.renderOpPage();
+    // Mantém badges laterais sincronizados mesmo fora do Kanban.
+    this.updateSidebarInProgressBadges();
   },
 
   /* ── Full op page render ────────────────────────────────── */
