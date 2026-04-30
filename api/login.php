@@ -80,8 +80,11 @@ try {
         jsonResponse(['ok' => false]);
     }
 
-    $salt = hex2bin((string) $row['pass_salt']);
-    $expected = hex2bin((string) $row['pass_hash']);
+    // MySQL CHAR(n) faz padding com espaços no fim — hex2bin() falha (PHP 8.4+: ValueError) e vira erro 500.
+    $saltHex = preg_replace('/\s+/', '', (string) $row['pass_salt']);
+    $hashHex = preg_replace('/\s+/', '', (string) $row['pass_hash']);
+    $salt = hex2bin($saltHex);
+    $expected = hex2bin($hashHex);
     // Limite defensivo (evita corpos POST com iterations absurdas se o esquema for alterado).
     $iterations = (int) ($row['pass_iterations'] ?? 60000);
     if ($iterations < 10000 || $iterations > 600000) {

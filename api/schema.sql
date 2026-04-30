@@ -127,8 +127,8 @@ CREATE TABLE IF NOT EXISTS team_chat_message (
 -- Senhas armazenadas como PBKDF2 (sha256) com salt por usuário.
 CREATE TABLE IF NOT EXISTS usuario (
   username VARCHAR(120) NOT NULL,
-  pass_salt CHAR(64) NOT NULL,
-  pass_hash CHAR(64) NOT NULL,
+  pass_salt VARCHAR(64) NOT NULL,
+  pass_hash VARCHAR(64) NOT NULL,
   pass_iterations INT NOT NULL DEFAULT 60000,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (username)
